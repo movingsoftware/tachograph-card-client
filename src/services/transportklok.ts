@@ -42,8 +42,11 @@ const TRACKMIJN_TOKEN_KEY = 'transportklok_trackmijn_token'
 const TRACKMIJN_COMPANY_KEY = 'transportklok_trackmijn_company'
 const TRACKMIJN_CLIENT_KEY = 'transportklok_trackmijn_client_identifier'
 
-const DEFAULT_TRANSPORTKLOK_DOMAIN = 'https://api.transportklok.nl'
-const DEFAULT_TRACKMIJN_DOMAIN = 'https://api.trackmijn.nl'
+// const DEFAULT_TRANSPORTKLOK_DOMAIN = 'https://api.transportklok.nl'
+// const DEFAULT_TRACKMIJN_DOMAIN = 'https://api.trackmijn.nl'
+
+const DEFAULT_TRANSPORTKLOK_DOMAIN = 'http://127.0.0.1:8000/api'
+const DEFAULT_TRACKMIJN_DOMAIN = 'http://127.0.0.1:8001/api'
 
 function normalizeBaseUrl(url: string | undefined, fallback: string): string {
   const trimmed = url?.trim().replace(/\/?$/, '')
@@ -119,10 +122,10 @@ export class TransportklokService {
       localStorage.getItem(TRACKMIJN_CLIENT_KEY) || `transportklok-tacho-${crypto.randomUUID?.() ?? Date.now()}`
   }
 
-  setServerConfigFromBackend(host: string, ident: string, theme: ServerTheme) {
+  setServerConfigFromBackend(host: string, ident: string, theme: string) {
     this.cachedServerHost = host
     this.cachedIdent = ident
-    this.cachedTheme = theme || 'Auto'
+    this.cachedTheme = theme as ServerTheme || 'Auto'
   }
 
   async applyFlespiServerConfig() {
@@ -284,7 +287,7 @@ export class TransportklokService {
 
     if (response.status === 401 && retrySession && this.deviceToken) {
       await this.createSessionFromDevice()
-      return this.transportklokRequest<T>(path, false)
+      return this.transportklokRequest<T>(path, {}, false)
     }
 
     if (!response.ok) {
@@ -382,7 +385,7 @@ export class TransportklokService {
     await this.ensureTachoBridgeClient()
   }
 
-  async ensureTachoBridgeClient() {
+  async ensureTachoBridgeClient(): Promise<void> {
     if (!this.trackmijnCompanyId) {
       await this.createTrackmijnToken(true)
     }
@@ -403,7 +406,7 @@ export class TransportklokService {
     }
 
     if (response.ok || response.status === 409) {
-      return
+      return;
     }
 
     const data = await parseJson(response)
