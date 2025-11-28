@@ -41,6 +41,8 @@ const SESSION_TOKEN_KEY = 'transportklok_session_token'
 const TRACKMIJN_TOKEN_KEY = 'transportklok_trackmijn_token'
 const TRACKMIJN_COMPANY_KEY = 'transportklok_trackmijn_company'
 const TRACKMIJN_CLIENT_KEY = 'transportklok_trackmijn_client_identifier'
+const TRACKMIJN_IDENTIFIER_PREFIX = 'TBA'
+const TRACKMIJN_IDENTIFIER_PATTERN = /^TBA\d{13}$/
 
 // const DEFAULT_TRANSPORTKLOK_DOMAIN = 'https://api.transportklok.nl'
 // const DEFAULT_TRACKMIJN_DOMAIN = 'https://api.trackmijn.nl'
@@ -59,6 +61,24 @@ function buildJsonHeaders(additional: HeadersInit = {}): HeadersInit {
     'Content-Type': 'application/json',
     ...additional,
   }
+}
+
+function generateTrackmijnIdentifier() {
+  const randomDigits = Array.from({ length: 13 }, () => Math.floor(Math.random() * 10)).join('')
+  return `${TRACKMIJN_IDENTIFIER_PREFIX}${randomDigits}`
+}
+
+function normalizeTrackmijnIdentifier(identifier: string | null) {
+  if (identifier && TRACKMIJN_IDENTIFIER_PATTERN.test(identifier)) {
+    return identifier
+  }
+
+  const numericPortion = (identifier ?? '').replace(/\D/g, '').slice(-13)
+  if (numericPortion.length === 0) {
+    return generateTrackmijnIdentifier()
+  }
+  const digits = numericPortion.padStart(13, '0').slice(0, 13)
+  return `${TRACKMIJN_IDENTIFIER_PREFIX}${digits}`
 }
 
 async function parseJson<T>(response: Response): Promise<T | undefined> {
@@ -118,8 +138,7 @@ export class TransportklokService {
     this.sessionToken = localStorage.getItem(SESSION_TOKEN_KEY)
     this.trackmijnToken = localStorage.getItem(TRACKMIJN_TOKEN_KEY)
     this.trackmijnCompanyId = localStorage.getItem(TRACKMIJN_COMPANY_KEY)
-    this.trackmijnClientIdentifier =
-      localStorage.getItem(TRACKMIJN_CLIENT_KEY) || `transportklok-tacho-${crypto.randomUUID?.() ?? Date.now()}`
+    this.trackmijnClientIdentifier = normalizeTrackmijnIdentifier(localStorage.getItem(TRACKMIJN_CLIENT_KEY))
   }
 
   setServerConfigFromBackend(host: string, ident: string, theme: string) {
