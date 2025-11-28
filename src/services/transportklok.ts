@@ -1,0 +1,435 @@
+import { invoke } from '@tauri-apps/api/core'
+
+export type TransportklokUser = {
+  id?: string
+  email?: string
+  first_name?: string
+  last_name?: string
+  current_role?: string
+  currentOrganization?: { name?: string }
+}
+
+type DeviceAuthenticationResponse = {
+  token: string
+  url: string
+}
+
+type DeviceTokenResponse = {
+  token: string
+}
+
+type SessionResponse = {
+  token: string
+}
+
+type TrackmijnTokenResponse = {
+  token: string
+  company_id: string
+}
+
+export class RoleNotAllowedError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'RoleNotAllowedError'
+  }
+}
+
+type ServerTheme = 'Auto' | 'Dark' | 'Light'
+
+const DEVICE_TOKEN_KEY = 'transportklok_device_token'
+const SESSION_TOKEN_KEY = 'transportklok_session_token'
+const TRACKMIJN_TOKEN_KEY = 'transportklok_trackmijn_token'
+const TRACKMIJN_COMPANY_KEY = 'transportklok_trackmijn_company'
+const TRACKMIJN_CLIENT_KEY = 'transportklok_trackmijn_client_identifier'
+
+const DEFAULT_TRANSPORTKLOK_DOMAIN = 'https://api.transportklok.nl'
+const DEFAULT_TRACKMIJN_DOMAIN = 'https://api.trackmijn.nl'
+
+function normalizeBaseUrl(url: string | undefined, fallback: string): string {
+  const trimmed = url?.trim().replace(/\/?$/, '')
+  return trimmed && trimmed.length > 0 ? trimmed : fallback
+}
+
+function buildJsonHeaders(additional: HeadersInit = {}): HeadersInit {
+  return {
+    Accept: 'application/json',
+    'Content-Type': 'application/json',
+    ...additional,
+  }
+}
+
+async function parseJson<T>(response: Response): Promise<T | undefined> {
+  try {
+    return (await response.json()) as T
+  } catch (error) {
+    console.warn('Could not parse JSON response', error)
+    return undefined
+  }
+}
+
+function getAppVersion(): string {
+  return (import.meta as { env: Record<string, string> }).env.PACKAGE_VERSION || 'transportklok-desktop'
+}
+
+function buildDeviceDetails() {
+  const nav = typeof navigator !== 'undefined' ? navigator : undefined
+  return {
+    device_name: nav?.userAgent ?? 'TransportKlok Desktop',
+    device_platform: (nav as { userAgentData?: { platform?: string } } | undefined)?.userAgentData?.platform ?? nav?.platform ?? 'web',
+    device_model: nav?.vendor ?? 'browser',
+    os_version: nav?.appVersion ?? 'unknown',
+    app_version: getAppVersion(),
+    device_manufacturer: 'TransportKlok',
+  }
+}
+
+export class TransportklokService {
+  private transportklokBase: string
+  private trackmijnBase: string
+  private flespiHost: string
+  private cachedIdent = ''
+  private cachedTheme: ServerTheme = 'Auto'
+  private cachedServerHost = ''
+  private hasAppliedEnvHost = false
+
+  private deviceToken: string | null
+  private sessionToken: string | null
+  private trackmijnToken: string | null
+  private trackmijnCompanyId: string | null
+  private trackmijnClientIdentifier: string
+
+  constructor() {
+    this.transportklokBase = normalizeBaseUrl(
+      (import.meta as { env: Record<string, string> }).env.VITE_TRANSPORTKLOK_API_DOMAIN,
+      DEFAULT_TRANSPORTKLOK_DOMAIN
+    )
+    this.trackmijnBase = normalizeBaseUrl(
+      (import.meta as { env: Record<string, string> }).env.VITE_TRACKMIJN_API_DOMAIN,
+      DEFAULT_TRACKMIJN_DOMAIN
+    )
+    const flespiDomain = (import.meta as { env: Record<string, string> }).env.VITE_FLESPI_TACHO_CARD_AUTH_CHANNEL_DOMAIN || ''
+    const flespiPort = (import.meta as { env: Record<string, string> }).env.VITE_FLESPI_TACHO_CARD_AUTH_CHANNEL_PORT || ''
+    this.flespiHost = flespiDomain ? `${flespiDomain}${flespiPort ? `:${flespiPort}` : ''}` : ''
+
+    this.deviceToken = localStorage.getItem(DEVICE_TOKEN_KEY)
+    this.sessionToken = localStorage.getItem(SESSION_TOKEN_KEY)
+    this.trackmijnToken = localStorage.getItem(TRACKMIJN_TOKEN_KEY)
+    this.trackmijnCompanyId = localStorage.getItem(TRACKMIJN_COMPANY_KEY)
+    this.trackmijnClientIdentifier =
+      localStorage.getItem(TRACKMIJN_CLIENT_KEY) || `transportklok-tacho-${crypto.randomUUID?.() ?? Date.now()}`
+  }
+
+  setServerConfigFromBackend(host: string, ident: string, theme: ServerTheme) {
+    this.cachedServerHost = host
+    this.cachedIdent = ident
+    this.cachedTheme = theme || 'Auto'
+  }
+
+  async applyFlespiServerConfig() {
+    if (!this.flespiHost) return
+    if (this.cachedServerHost === this.flespiHost && this.hasAppliedEnvHost) {
+      return
+    }
+
+    try {
+      await invoke('update_server', {
+        host: this.flespiHost,
+        ident: this.cachedIdent,
+        theme: this.cachedTheme,
+      })
+      await invoke('manual_sync_cards', { readername: '', restart: true })
+      await invoke('app_connection')
+      this.cachedServerHost = this.flespiHost
+      this.hasAppliedEnvHost = true
+    } catch (error) {
+      console.error('Unable to push Flespi server configuration', error)
+    }
+  }
+
+  private persistTokens() {
+    if (this.deviceToken) {
+      localStorage.setItem(DEVICE_TOKEN_KEY, this.deviceToken)
+    }
+    if (this.sessionToken) {
+      localStorage.setItem(SESSION_TOKEN_KEY, this.sessionToken)
+    }
+    if (this.trackmijnToken) {
+      localStorage.setItem(TRACKMIJN_TOKEN_KEY, this.trackmijnToken)
+    }
+    if (this.trackmijnCompanyId) {
+      localStorage.setItem(TRACKMIJN_COMPANY_KEY, this.trackmijnCompanyId)
+    }
+    localStorage.setItem(TRACKMIJN_CLIENT_KEY, this.trackmijnClientIdentifier)
+  }
+
+  clearAuth() {
+    this.deviceToken = null
+    this.sessionToken = null
+    this.trackmijnToken = null
+    this.trackmijnCompanyId = null
+    localStorage.removeItem(DEVICE_TOKEN_KEY)
+    localStorage.removeItem(SESSION_TOKEN_KEY)
+    localStorage.removeItem(TRACKMIJN_TOKEN_KEY)
+    localStorage.removeItem(TRACKMIJN_COMPANY_KEY)
+  }
+
+  async requestDeviceAuthentication(): Promise<DeviceAuthenticationResponse> {
+    const response = await fetch(`${this.transportklokBase}/auth/device/authentication-token`, {
+      method: 'POST',
+      headers: buildJsonHeaders(),
+      body: JSON.stringify({ mode: 'web' }),
+    })
+
+    if (!response.ok) {
+      throw new Error('Failed to start TransportKlok device authentication')
+    }
+
+    const data = await parseJson<DeviceAuthenticationResponse>(response)
+    if (!data?.token || !data?.url) {
+      throw new Error('Unexpected response while starting authentication')
+    }
+
+    return data
+  }
+
+  async checkAuthenticationToken(token: string): Promise<boolean> {
+    const response = await fetch(
+      `${this.transportklokBase}/auth/device/authentication-token/check?token=${encodeURIComponent(token)}`,
+      {
+        method: 'GET',
+      }
+    )
+
+    if (response.status === 200) {
+      return true
+    }
+
+    if (response.status === 404) {
+      return false
+    }
+
+    throw new Error('Unable to verify authentication token')
+  }
+
+  async completeDeviceLogin(token: string): Promise<TransportklokUser> {
+    await this.registerDevice(token)
+    await this.createSessionFromDevice()
+    const user = await this.fetchCurrentUser()
+    this.persistAfterUserValidation(user)
+    return user
+  }
+
+  private async registerDevice(token: string) {
+    const response = await fetch(`${this.transportklokBase}/auth/device`, {
+      method: 'POST',
+      headers: buildJsonHeaders(),
+      body: JSON.stringify({ token, ...buildDeviceDetails() }),
+    })
+
+    if (!response.ok) {
+      throw new Error('Failed to register device')
+    }
+
+    const data = await parseJson<DeviceTokenResponse>(response)
+    if (!data?.token) {
+      throw new Error('Device token is missing in the response')
+    }
+
+    this.deviceToken = data.token
+    this.persistTokens()
+  }
+
+  private async createSessionFromDevice(): Promise<string> {
+    if (!this.deviceToken) {
+      throw new Error('Device token missing, please login again')
+    }
+
+    const response = await fetch(`${this.transportklokBase}/auth/session`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${this.deviceToken}`,
+      },
+    })
+
+    if (!response.ok) {
+      throw new Error('Failed to create session from device token')
+    }
+
+    const data = await parseJson<SessionResponse>(response)
+    if (!data?.token) {
+      throw new Error('Session token missing in the response')
+    }
+
+    this.sessionToken = data.token
+    this.persistTokens()
+    return data.token
+  }
+
+  private async transportklokRequest<T>(path: string, init: RequestInit = {}, retrySession = true): Promise<T> {
+    if (!this.sessionToken && this.deviceToken) {
+      await this.createSessionFromDevice()
+    }
+    if (!this.sessionToken) {
+      throw new Error('Not authenticated with TransportKlok')
+    }
+
+    const response = await fetch(`${this.transportklokBase}${path}`, {
+      ...init,
+      method: init.method ?? 'GET',
+      headers: {
+        Authorization: `Bearer ${this.sessionToken}`,
+        ...(init.headers || {}),
+      },
+    })
+
+    if (response.status === 401 && retrySession && this.deviceToken) {
+      await this.createSessionFromDevice()
+      return this.transportklokRequest<T>(path, false)
+    }
+
+    if (!response.ok) {
+      const data = await parseJson(response)
+      console.error('TransportKlok request failed', data)
+      throw new Error('TransportKlok request failed')
+    }
+
+    const data = await parseJson<T>(response)
+    if (!data) {
+      throw new Error('Invalid TransportKlok response')
+    }
+
+    return data
+  }
+
+  async fetchCurrentUser(): Promise<TransportklokUser> {
+    const user = await this.transportklokRequest<TransportklokUser>(
+      '/rest/me?relations[]=currentOrganization.name&relations[]=current_role'
+    )
+    return user
+  }
+
+  private persistAfterUserValidation(user: TransportklokUser) {
+    if (user.current_role === 'employee') {
+      this.clearAuth()
+      throw new RoleNotAllowedError('Employee accounts are not allowed for tachograph authentication.')
+    }
+    this.persistTokens()
+  }
+
+  async ensureSession(): Promise<TransportklokUser> {
+    if (!this.sessionToken && this.deviceToken) {
+      await this.createSessionFromDevice()
+    }
+
+    const user = await this.fetchCurrentUser()
+    this.persistAfterUserValidation(user)
+    return user
+  }
+
+  private async createTrackmijnToken(force = false): Promise<TrackmijnTokenResponse> {
+    if (!force && this.trackmijnToken && this.trackmijnCompanyId) {
+      return { token: this.trackmijnToken, company_id: this.trackmijnCompanyId }
+    }
+
+    const payload = await this.transportklokRequest<TrackmijnTokenResponse>(
+      '/actions/management/fleet/tokens',
+      { method: 'POST' }
+    )
+    if (!payload?.token || !payload?.company_id) {
+      throw new Error('Could not create TrackMijn token')
+    }
+
+    this.trackmijnToken = payload.token
+    this.trackmijnCompanyId = payload.company_id
+    this.persistTokens()
+    return payload
+  }
+
+  private async trackmijnRequest<T>(path: string, init: RequestInit = {}, retry = true): Promise<T> {
+    if (!this.trackmijnToken || !this.trackmijnCompanyId) {
+      await this.createTrackmijnToken()
+    }
+
+    if (!this.trackmijnToken) {
+      throw new Error('TrackMijn token missing')
+    }
+
+    const response = await fetch(`${this.trackmijnBase}${path}`, {
+      ...init,
+      headers: {
+        Authorization: `Bearer ${this.trackmijnToken}`,
+        ...init.headers,
+      },
+    })
+
+    if (response.status === 401 && retry) {
+      await this.createTrackmijnToken(true)
+      return this.trackmijnRequest<T>(path, init, false)
+    }
+
+    if (!response.ok) {
+      const data = await parseJson(response)
+      console.error('TrackMijn request failed', data)
+      throw new Error('TrackMijn request failed')
+    }
+
+    const data = await parseJson<T>(response)
+    return data as T
+  }
+
+  async ensureTrackmijnSetup() {
+    await this.createTrackmijnToken()
+    await this.ensureTachoBridgeClient()
+  }
+
+  async ensureTachoBridgeClient() {
+    if (!this.trackmijnCompanyId) {
+      await this.createTrackmijnToken(true)
+    }
+    if (!this.trackmijnCompanyId) {
+      throw new Error('Unable to determine TrackMijn company id')
+    }
+
+    const path = `/v1/companies/${this.trackmijnCompanyId}/tachograph-company-card-clients`
+    const response = await fetch(`${this.trackmijnBase}${path}`, {
+      method: 'POST',
+      headers: buildJsonHeaders({ Authorization: `Bearer ${this.trackmijnToken ?? ''}` }),
+      body: JSON.stringify({ client_identifier: this.trackmijnClientIdentifier }),
+    })
+
+    if (response.status === 401) {
+      await this.createTrackmijnToken(true)
+      return this.ensureTachoBridgeClient()
+    }
+
+    if (response.ok || response.status === 409) {
+      return
+    }
+
+    const data = await parseJson(response)
+    console.error('Unable to create TrackMijn tacho bridge client', data)
+    throw new Error('Unable to create TrackMijn tacho bridge client')
+  }
+
+  getSessionToken(): string | null {
+    return this.sessionToken
+  }
+
+  getTrackmijnInfo() {
+    return {
+      token: this.trackmijnToken,
+      companyId: this.trackmijnCompanyId,
+      clientIdentifier: this.trackmijnClientIdentifier,
+    }
+  }
+
+  getTransportklokBase() {
+    return this.transportklokBase
+  }
+
+  getFlespiHost() {
+    return this.flespiHost
+  }
+}
+
+export const transportklokService = new TransportklokService()
