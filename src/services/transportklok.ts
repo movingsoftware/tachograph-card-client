@@ -41,6 +41,7 @@ const SESSION_TOKEN_KEY = 'transportklok_session_token'
 const TRACKMIJN_TOKEN_KEY = 'transportklok_trackmijn_token'
 const TRACKMIJN_COMPANY_KEY = 'transportklok_trackmijn_company'
 const TRACKMIJN_CLIENT_KEY = 'transportklok_trackmijn_client_identifier'
+const TRACKMIJN_DEVICE_ID_KEY = 'transportklok_trackmijn_device_id'
 const TRACKMIJN_IDENTIFIER_PREFIX = 'TBA'
 const TRACKMIJN_IDENTIFIER_PATTERN = /^TBA\d{13}$/
 
@@ -120,6 +121,7 @@ export class TransportklokService {
   private trackmijnToken: string | null
   private trackmijnCompanyId: string | null
   private trackmijnClientIdentifier: string
+  private trackmijnDeviceId: string | null
 
   constructor() {
     this.transportklokBase = normalizeBaseUrl(
@@ -139,6 +141,7 @@ export class TransportklokService {
     this.trackmijnToken = localStorage.getItem(TRACKMIJN_TOKEN_KEY)
     this.trackmijnCompanyId = localStorage.getItem(TRACKMIJN_COMPANY_KEY)
     this.trackmijnClientIdentifier = normalizeTrackmijnIdentifier(localStorage.getItem(TRACKMIJN_CLIENT_KEY))
+    this.trackmijnDeviceId = localStorage.getItem(TRACKMIJN_DEVICE_ID_KEY)
   }
 
   setServerConfigFromBackend(host: string, ident: string, theme: string) {
@@ -182,6 +185,9 @@ export class TransportklokService {
       localStorage.setItem(TRACKMIJN_COMPANY_KEY, this.trackmijnCompanyId)
     }
     localStorage.setItem(TRACKMIJN_CLIENT_KEY, this.trackmijnClientIdentifier)
+    if (this.trackmijnDeviceId) {
+      localStorage.setItem(TRACKMIJN_DEVICE_ID_KEY, this.trackmijnDeviceId)
+    }
   }
 
   clearAuth() {
@@ -189,10 +195,12 @@ export class TransportklokService {
     this.sessionToken = null
     this.trackmijnToken = null
     this.trackmijnCompanyId = null
+    this.trackmijnDeviceId = null
     localStorage.removeItem(DEVICE_TOKEN_KEY)
     localStorage.removeItem(SESSION_TOKEN_KEY)
     localStorage.removeItem(TRACKMIJN_TOKEN_KEY)
     localStorage.removeItem(TRACKMIJN_COMPANY_KEY)
+    localStorage.removeItem(TRACKMIJN_DEVICE_ID_KEY)
   }
 
   async requestDeviceAuthentication(): Promise<DeviceAuthenticationResponse> {
@@ -399,12 +407,41 @@ export class TransportklokService {
     return data as T
   }
 
-  async ensureTrackmijnSetup() {
-    await this.createTrackmijnToken()
-    await this.ensureTachoBridgeClient()
+  private resetTrackmijnDeviceId() {
+    this.trackmijnDeviceId = null
+    localStorage.removeItem(TRACKMIJN_DEVICE_ID_KEY)
   }
 
-  async ensureTachoBridgeClient(): Promise<void> {
+  private async trackmijnClientExists(deviceId: string, retry = true): Promise<boolean> {
+    if (!this.trackmijnCompanyId) {
+      return false
+    }
+
+    const path = `/v1/companies/${this.trackmijnCompanyId}/tachograph-company-card-clients/${deviceId}`
+    const response = await fetch(`${this.trackmijnBase}${path}`, {
+      method: 'GET',
+      headers: buildJsonHeaders({ Authorization: `Bearer ${this.trackmijnToken ?? ''}` }),
+    })
+
+    if (response.status === 401 && retry) {
+      await this.createTrackmijnToken(true)
+      return this.trackmijnClientExists(deviceId, false)
+    }
+
+    if (response.status === 404) {
+      return false
+    }
+
+    if (!response.ok) {
+      const data = await parseJson(response)
+      console.error('Unable to verify TrackMijn tacho bridge client', data)
+      throw new Error('Unable to verify TrackMijn tacho bridge client')
+    }
+
+    return true
+  }
+
+  private async createTachoBridgeClient(): Promise<string> {
     if (!this.trackmijnCompanyId) {
       await this.createTrackmijnToken(true)
     }
@@ -421,16 +458,62 @@ export class TransportklokService {
 
     if (response.status === 401) {
       await this.createTrackmijnToken(true)
-      return this.ensureTachoBridgeClient()
+      return this.createTachoBridgeClient()
     }
 
-    if (response.ok || response.status === 409) {
-      return;
+    if (!response.ok && response.status !== 409) {
+      const data = await parseJson(response)
+      console.error('Unable to create TrackMijn tacho bridge client', data)
+      throw new Error('Unable to create TrackMijn tacho bridge client')
     }
 
-    const data = await parseJson(response)
-    console.error('Unable to create TrackMijn tacho bridge client', data)
-    throw new Error('Unable to create TrackMijn tacho bridge client')
+    const data = await parseJson<{ device_id?: string }>(response)
+    if (data?.device_id) {
+      this.trackmijnDeviceId = data.device_id
+      this.persistTokens()
+      return data.device_id
+    }
+
+    if (response.status === 409 && this.trackmijnDeviceId) {
+      return this.trackmijnDeviceId
+    }
+
+    throw new Error('Unable to determine TrackMijn tacho bridge client device id')
+  }
+
+  async ensureTrackmijnSetup() {
+    await this.createTrackmijnToken()
+    await this.ensureTachoBridgeClient()
+  }
+
+  async ensureTachoBridgeClient(): Promise<void> {
+    if (!this.trackmijnCompanyId) {
+      await this.createTrackmijnToken(true)
+    }
+    if (!this.trackmijnCompanyId) {
+      throw new Error('Unable to determine TrackMijn company id')
+    }
+
+    for (let attempts = 0; attempts < 2; attempts++) {
+      if (this.trackmijnDeviceId) {
+        const exists = await this.trackmijnClientExists(this.trackmijnDeviceId)
+        if (exists) {
+          return
+        }
+        this.resetTrackmijnDeviceId()
+      }
+
+      const deviceId = await this.createTachoBridgeClient()
+      const exists = await this.trackmijnClientExists(deviceId)
+
+      if (exists) {
+        return
+      }
+
+      this.resetTrackmijnDeviceId()
+    }
+
+    throw new Error('Unable to create or verify TrackMijn tacho bridge client')
   }
 
   getSessionToken(): string | null {
@@ -442,6 +525,7 @@ export class TransportklokService {
       token: this.trackmijnToken,
       companyId: this.trackmijnCompanyId,
       clientIdentifier: this.trackmijnClientIdentifier,
+      deviceId: this.trackmijnDeviceId,
     }
   }
 
