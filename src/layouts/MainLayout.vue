@@ -1,59 +1,12 @@
 <template>
   <q-layout view="lHh Lpr lFf">
-    <q-header elevated>
+    <q-header elevated class="bg-white text-primary">
       <q-toolbar>
-        <!-- Title in the up of the app -->
-        <q-toolbar-title class="q-ml-md">
-          Tacho Bridge Application
-          <q-icon name="mdi-record-circle-outline" class="q-ml-md" />
+        <q-toolbar-title class="q-ml-md title-text">
+          TransportKlok tachograph bridge
+          <q-icon name="mdi-record-circle-outline" class="q-ml-md" color="orange-8" />
         </q-toolbar-title>
-
-        <!-- Button of the Dialog of the server configuration -->
-        <div class="q-pa-xs q-gutter-sm">
-          <q-btn flat round icon="mdi-cog" @click="config = true" />
-          <!-- Dialog window for the entering the Server Address value -->
-          <q-dialog v-model="config" persistent>
-            <q-card style="min-width: 350px">
-              <q-card-section>
-                <div class="text-h6">Server configuration</div>
-              </q-card-section>
-
-              <q-card-section class="q-pt-none">
-                <q-input
-                  label="App ident"
-                  :dense="dense"
-                  v-model="identInput"
-                  autofocus
-                  @keyup.enter="config = false"
-                  :error="!isIndetValid"
-                  error-message="The identifier must have the prefix TBA + 13 digits. For example: TBA0000000000001."
-                />
-                <q-input
-                  label="Server address"
-                  :dense="dense"
-                  v-model="host"
-                  autofocus
-                  @keyup.enter="config = false"
-                />
-                <q-select
-                  v-model="selectedTheme"
-                  :options="themeOptions"
-                  label="Theme"
-                  @update:model-value="changeTheme"
-                />
-              </q-card-section>
-              <q-card-actions align="right" class="text-primary">
-                <q-btn flat label="Cancel" v-close-popup />
-                <q-btn
-                  flat
-                  label="Save"
-                  v-close-popup
-                  @click="saveServerConfig(host, identInput, selectedTheme)"
-                />
-              </q-card-actions>
-            </q-card>
-          </q-dialog>
-        </div>
+        <div class="q-mr-md text-caption text-grey-8">Server: {{ host || 'configuring...' }}</div>
       </q-toolbar>
     </q-header>
 
@@ -65,31 +18,13 @@
 
 <script setup lang="ts">
 import { useQuasar, Notify } from 'quasar'
-import { ref, computed, defineComponent } from 'vue'
-import { invoke } from '@tauri-apps/api/core'
+import { ref } from 'vue'
 import { listen } from '@tauri-apps/api/event'
 import 'animate.css'
+import { transportklokService } from '../services/transportklok'
 
-const TBA_IDENT_REGEXP = /^TBA\d{13}$/ // Regular expression for the company card number
-const isIndetValid = computed(() => TBA_IDENT_REGEXP.test(identInput.value))
-const ident = ref('') // Input field for ident without prefix
-const identInput = computed({
-  get: () => `TBA${ident.value}`,
-  set: (val) => {
-    ident.value = val.replace(/^TBA/, '')
-  },
-})
-// Server configuration dialog
-const config = ref(false) // Config dialog
-const host = ref('') // Server address. Config
-const dense = ref(true) // Dense mode
-
-/*
-  /////////// Dark theme switcher ///////////
-*/
+const host = ref('')
 const $q = useQuasar()
-const selectedTheme = ref('') // Default theme
-const themeOptions = ['Auto', 'Dark', 'Light']
 
 const changeTheme = (value: string) => {
   switch (value) {
@@ -106,87 +41,27 @@ const changeTheme = (value: string) => {
       console.log('Unknown theme value:', value)
   }
 }
-//////////////////////////////////////////////
-
-// Save the server configuration
-const saveServerConfig = async (host: string, ident: string, theme: string) => {
-  console.log(`server_address: ${host}, ident: ${ident}, theme: ${theme}`)
-
-  try {
-    // Update the configuration with the new card number in the dynamic cache
-    const response = await invoke('update_server', {
-      host: host,
-      ident: ident,
-      theme: theme,
-    })
-
-    console.log('Response from update_server:', response)
-
-    Notify.create({
-      message: 'Server configuration has been updated.',
-      color: 'green',
-      position: 'bottom',
-      timeout: 3000,
-    })
-
-    // Launch a manual refresh of server connections.
-    await invoke('manual_sync_cards', {
-      readername: "",
-      restart: true,
-    })
-    console.log('Server configuration updated successfully_1')
-    await invoke('app_connection') // restart APP connection
-    console.log('Server configuration updated successfully_2')
-  } catch (error) {
-    console.error('Error updating server configuration:', error)
-    Notify.create({
-      message: 'Failed to update server configuration.',
-      color: 'red',
-      position: 'bottom',
-      timeout: 3000,
-    })
-  }
-}
-
-defineOptions({
-  name: 'MainLayout',
-})
-
-defineComponent({
-  setup() {
-    return {
-      saveServerConfig, // Save the server configuration
-    }
-  },
-})
 
 listen('global-config-server', (event) => {
-  // Global configuration event
   const payload = event.payload as {
     host: string
     ident: string
     dark_theme: string
   }
-  console.log('host:', payload.host, 'ident:', payload.ident, 'dark_theme:', payload.dark_theme)
 
   host.value = payload.host
-  identInput.value = payload.ident
-
-  // update the theme value in the application
   changeTheme(payload.dark_theme)
-  selectedTheme.value = payload.dark_theme
+  transportklokService.setServerConfigFromBackend(payload.host, payload.ident, payload.dark_theme)
+  void transportklokService.applyFlespiServerConfig()
 }).catch((error) => {
   console.error('Error listening to global-config-server:', error)
 })
 
 listen('global-notification', (event) => {
-  // Global configuration event
   const payload = event.payload as {
     notification_type: string
     message: string
   }
-
-  console.log('global-notification:', payload.notification_type, 'message:', payload.message)
 
   if (payload.notification_type === 'access') {
     Notify.create({
@@ -211,5 +86,11 @@ listen('global-notification', (event) => {
 }).catch((error) => {
   console.error('Error listening to global-notification:', error)
 })
-
 </script>
+
+<style scoped>
+.title-text {
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+</style>
