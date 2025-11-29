@@ -100,6 +100,7 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref, computed } from 'vue'
 import { Notify } from 'quasar'
+import { open as openExternal } from '@tauri-apps/api/shell'
 import TachoMainComponent from '../components/TachoMainComponent.vue'
 import { RoleNotAllowedError, transportklokService, type TransportklokUser } from '../services/transportklok'
 
@@ -192,7 +193,7 @@ async function startLogin() {
   try {
     const response = await transportklokService.requestDeviceAuthentication()
     pendingToken.value = response.token
-    window.open(response.url, '_blank')
+    await openExternal(response.url)
     statusMessage.value = 'Voltooi de aanmelding in je browser; wij controleren dit automatisch.'
     beginPolling()
   } catch (error) {
