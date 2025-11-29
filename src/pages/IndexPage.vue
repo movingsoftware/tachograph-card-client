@@ -103,11 +103,15 @@ import { Notify } from 'quasar'
 import TachoMainComponent from '../components/TachoMainComponent.vue'
 import { RoleNotAllowedError, transportklokService, type TransportklokUser } from '../services/transportklok'
 
+const POLL_INTERVAL_MS = 5000
+const MAX_POLL_DURATION_MS = 5 * 60 * 1000
+
 const authState = ref<'loading' | 'needs-login' | 'ready'>('loading')
 const statusMessage = ref('Checking TransportKlok session...')
 const user = ref<TransportklokUser | null>(null)
 const pendingToken = ref<string>('')
 const pollInterval = ref<number | undefined>(undefined)
+const pollStartedAt = ref<number | null>(null)
 const isRequestingLogin = ref(false)
 const isCheckingLogin = ref(false)
 
@@ -126,16 +130,31 @@ const clearPoll = () => {
     window.clearInterval(pollInterval.value)
     pollInterval.value = undefined
   }
+  pollStartedAt.value = null
 }
 
 onMounted(async () => {
+  window.addEventListener('focus', handleFocus)
+  window.addEventListener('blur', handleBlur)
   await transportklokService.applyFlespiServerConfig()
   await refreshSession()
 })
 
 onBeforeUnmount(() => {
+  window.removeEventListener('focus', handleFocus)
+  window.removeEventListener('blur', handleBlur)
   clearPoll()
 })
+
+function handleFocus() {
+  if (pendingToken.value && !pollInterval.value) {
+    beginPolling()
+  }
+}
+
+function handleBlur() {
+  clearPoll()
+}
 
 async function refreshSession() {
   isCheckingLogin.value = true
@@ -185,9 +204,21 @@ async function startLogin() {
 
 function beginPolling() {
   clearPoll()
+  pollStartedAt.value = Date.now()
   pollInterval.value = window.setInterval(() => {
+    if (!pendingToken.value) {
+      clearPoll()
+      return
+    }
+
+    if (pollStartedAt.value && Date.now() - pollStartedAt.value >= MAX_POLL_DURATION_MS) {
+      statusMessage.value = 'Login verification timed out. Please start again.'
+      clearPoll()
+      return
+    }
+
     void checkLoginStatus()
-  }, 3000)
+  }, POLL_INTERVAL_MS)
 }
 
 async function checkLoginStatus() {
