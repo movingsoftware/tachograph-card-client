@@ -211,12 +211,12 @@ export class TransportklokService {
     })
 
     if (!response.ok) {
-      throw new Error('Failed to start TransportKlok device authentication')
+      throw new Error('Kon TransportKlok-apparatauthenticatie niet starten')
     }
 
     const data = await parseJson<DeviceAuthenticationResponse>(response)
     if (!data?.token || !data?.url) {
-      throw new Error('Unexpected response while starting authentication')
+      throw new Error('Onverwachte reactie tijdens het starten van authenticatie')
     }
 
     return data
@@ -238,7 +238,7 @@ export class TransportklokService {
       return false
     }
 
-    throw new Error('Unable to verify authentication token')
+    throw new Error('Kan authenticatietoken niet verifiëren')
   }
 
   async completeDeviceLogin(token: string): Promise<TransportklokUser> {
@@ -257,12 +257,12 @@ export class TransportklokService {
     })
 
     if (!response.ok) {
-      throw new Error('Failed to register device')
+      throw new Error('Registreren van apparaat mislukt')
     }
 
     const data = await parseJson<DeviceTokenResponse>(response)
     if (!data?.token) {
-      throw new Error('Device token is missing in the response')
+      throw new Error('Apparaattoken ontbreekt in de respons')
     }
 
     this.deviceToken = data.token
@@ -271,7 +271,7 @@ export class TransportklokService {
 
   private async createSessionFromDevice(): Promise<string> {
     if (!this.deviceToken) {
-      throw new Error('Device token missing, please login again')
+      throw new Error('Apparaattoken ontbreekt, log opnieuw in')
     }
 
     const response = await fetch(`${this.transportklokBase}/auth/session`, {
@@ -282,12 +282,12 @@ export class TransportklokService {
     })
 
     if (!response.ok) {
-      throw new Error('Failed to create session from device token')
+      throw new Error('Maken van sessie uit apparaattoken mislukt')
     }
 
     const data = await parseJson<SessionResponse>(response)
     if (!data?.token) {
-      throw new Error('Session token missing in the response')
+      throw new Error('Sessietoken ontbreekt in de respons')
     }
 
     this.sessionToken = data.token
@@ -300,7 +300,7 @@ export class TransportklokService {
       await this.createSessionFromDevice()
     }
     if (!this.sessionToken) {
-      throw new Error('Not authenticated with TransportKlok')
+      throw new Error('Niet geauthenticeerd bij TransportKlok')
     }
 
     const response = await fetch(`${this.transportklokBase}${path}`, {
@@ -320,12 +320,12 @@ export class TransportklokService {
     if (!response.ok) {
       const data = await parseJson(response)
       console.error('TransportKlok request failed', data)
-      throw new Error('TransportKlok request failed')
+      throw new Error('TransportKlok-verzoek mislukt')
     }
 
     const data = await parseJson<T>(response)
     if (!data) {
-      throw new Error('Invalid TransportKlok response')
+      throw new Error('Ongeldige TransportKlok-respons')
     }
 
     return data
@@ -341,7 +341,7 @@ export class TransportklokService {
   private persistAfterUserValidation(user: TransportklokUser) {
     if (user.current_role === 'employee') {
       this.clearAuth()
-      throw new RoleNotAllowedError('Employee accounts are not allowed for tachograph authentication.')
+      throw new RoleNotAllowedError('Medewerkersaccounts zijn niet toegestaan voor tachograafauthenticatie.')
     }
     this.persistTokens()
   }
@@ -366,7 +366,7 @@ export class TransportklokService {
       { method: 'POST' }
     )
     if (!payload?.token || !payload?.company_id) {
-      throw new Error('Could not create TrackMijn token')
+      throw new Error('Kan TrackMijn-token niet aanmaken')
     }
 
     this.trackmijnToken = payload.token
@@ -381,7 +381,7 @@ export class TransportklokService {
     }
 
     if (!this.trackmijnToken) {
-      throw new Error('TrackMijn token missing')
+      throw new Error('TrackMijn-token ontbreekt')
     }
 
     const response = await fetch(`${this.trackmijnBase}${path}`, {
@@ -400,7 +400,7 @@ export class TransportklokService {
     if (!response.ok) {
       const data = await parseJson(response)
       console.error('TrackMijn request failed', data)
-      throw new Error('TrackMijn request failed')
+      throw new Error('TrackMijn-verzoek mislukt')
     }
 
     const data = await parseJson<T>(response)
@@ -435,7 +435,7 @@ export class TransportklokService {
     if (!response.ok) {
       const data = await parseJson(response)
       console.error('Unable to verify TrackMijn tacho bridge client', data)
-      throw new Error('Unable to verify TrackMijn tacho bridge client')
+      throw new Error('Kan TrackMijn-tachobridgeclient niet verifiëren')
     }
 
     return true
@@ -446,7 +446,7 @@ export class TransportklokService {
       await this.createTrackmijnToken(true)
     }
     if (!this.trackmijnCompanyId) {
-      throw new Error('Unable to determine TrackMijn company id')
+      throw new Error('Kan TrackMijn-bedrijfs-ID niet bepalen')
     }
 
     const path = `/v1/companies/${this.trackmijnCompanyId}/tachograph-company-card-clients`
@@ -464,7 +464,7 @@ export class TransportklokService {
     if (!response.ok && response.status !== 409) {
       const data = await parseJson(response)
       console.error('Unable to create TrackMijn tacho bridge client', data)
-      throw new Error('Unable to create TrackMijn tacho bridge client')
+      throw new Error('Kan TrackMijn-tachobridgeclient niet aanmaken')
     }
 
     const data = await parseJson<{ device_id?: string }>(response)
@@ -478,7 +478,7 @@ export class TransportklokService {
       return this.trackmijnDeviceId
     }
 
-    throw new Error('Unable to determine TrackMijn tacho bridge client device id')
+    throw new Error('Kan apparaat-ID van TrackMijn-tachobridgeclient niet bepalen')
   }
 
   async ensureTrackmijnSetup() {
@@ -491,7 +491,7 @@ export class TransportklokService {
       await this.createTrackmijnToken(true)
     }
     if (!this.trackmijnCompanyId) {
-      throw new Error('Unable to determine TrackMijn company id')
+      throw new Error('Kan TrackMijn-bedrijfs-ID niet bepalen')
     }
 
     for (let attempts = 0; attempts < 2; attempts++) {
@@ -513,7 +513,7 @@ export class TransportklokService {
       this.resetTrackmijnDeviceId()
     }
 
-    throw new Error('Unable to create or verify TrackMijn tacho bridge client')
+    throw new Error('Kan TrackMijn-tachobridgeclient niet aanmaken of verifiëren')
   }
 
   getSessionToken(): string | null {

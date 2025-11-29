@@ -1,9 +1,9 @@
 <template>
   <div class="q-pt-md">
     <q-banner v-if="isLinkMode" dense inline-actions rounded class="text-white bg-blue-8 q-mb-xs">
-      Click a card in the list below to assign or click
+      Klik op een kaart in de lijst hieronder om toe te wijzen of klik
       <q-btn
-        label="Add card"
+        label="Kaart toevoegen"
         dense
         icon="mdi-card-plus"
         color="white"
@@ -22,12 +22,12 @@
             <q-icon name="mdi-cards" />
           </q-item-section>
 
-          <q-item-section>Smart cards ({{ Object.keys(cardsList).length }})</q-item-section>
+          <q-item-section>Smartcards ({{ Object.keys(cardsList).length }})</q-item-section>
 
           <q-item-section>
             <div>
               <q-btn
-                label="Add Card"
+                label="Kaart toevoegen"
                 dense
                 icon="mdi-card-plus"
                 color="green"
@@ -78,14 +78,14 @@
     <q-dialog v-model="isDialogOpen">
       <q-card style="min-width: 400px">
         <q-card-section>
-          <div class="text-h6">{{ isEditMode ? 'Edit Card' : 'Add Card' }}</div>
+          <div class="text-h6">{{ isEditMode ? 'Kaart bewerken' : 'Kaart toevoegen' }}</div>
         </q-card-section>
 
         <q-card-section class="q-py-none">
           <q-input v-model="dialogCardICCID" label="ICCID" outlined dense disable />
           <q-input
             v-model="dialogCardNumber"
-            label="Card Number"
+            label="Kaartnummer"
             outlined
             dense
             maxlength="16"
@@ -93,12 +93,12 @@
             :error="!!cardNumberError"
             :error-message="cardNumberError"
           />
-          <q-input v-model="dialogCardName" label="Card Name" outlined dense class="q-mt-xs" />
+          <q-input v-model="dialogCardName" label="Kaartnaam" outlined dense class="q-mt-xs" />
         </q-card-section>
 
         <q-card-actions align="right">
-          <q-btn flat label="Cancel" color="primary" v-close-popup @click="closeCard" />
-          <q-btn flat label="Save" color="primary" @click="saveCard" />
+          <q-btn flat label="Annuleren" color="primary" v-close-popup @click="closeCard" />
+          <q-btn flat label="Opslaan" color="primary" @click="saveCard" />
         </q-card-actions>
       </q-card>
     </q-dialog>
@@ -196,12 +196,12 @@ function validateCardNumber(): boolean {
   const number = dialogCardNumber.value.trim().toUpperCase()
 
   if (!TACHO_COMPANY_CARD_REGEXP.test(number)) {
-    cardNumberError.value = 'Card number must be 16 characters (A-Z, 0-9 only)'
+    cardNumberError.value = 'Kaartnummer moet uit 16 tekens bestaan (alleen A-Z, 0-9)'
     return false
   }
 
   if (!isEditMode.value && number in props.cards) {
-    cardNumberError.value = 'Card number already exists'
+    cardNumberError.value = 'Kaartnummer bestaat al'
     return false
   }
 
