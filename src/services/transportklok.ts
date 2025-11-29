@@ -230,12 +230,13 @@ export class TransportklokService {
       }
     )
 
-    if (response.status === 200) {
-      return true
-    }
-
     if (response.status === 404) {
       return false
+    }
+
+    if (response.status === 200) {
+      const payload = await parseJson<{ success?: boolean }>(response)
+      return payload?.success === true
     }
 
     throw new Error('Kan authenticatietoken niet verifiëren')
