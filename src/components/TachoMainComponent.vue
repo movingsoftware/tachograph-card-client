@@ -2,7 +2,7 @@
   <div style="width: 600px; max-width: 100%">
     <div class="rounded-borders" style="border: 1px solid #666">
       <div v-if="state.readers.length === 0" class="q-pa-md text-grey text-h6">
-        No connected smart card readers
+        Geen aangesloten smartcardlezers
       </div>
       <div v-for="(reader, index) in state.readers" :key="index" class="row reader">
         <q-item class="col-6" style="min-height: 50px" dense>
@@ -22,7 +22,7 @@
 
           <q-item-section>
             <template v-if="!reader.card_number && reader.iccid">
-              <q-item-label lines="1">UNKNOWN CARD</q-item-label>
+              <q-item-label lines="1">ONBEKENDE KAART</q-item-label>
               <q-item-label lines="1" caption>
                 <q-chip dense size="sm" color="grey" class="text-dark text-bold">
                   ICCID: {{ reader.iccid }}
@@ -42,7 +42,7 @@
             </template>
 
             <q-item-label lines="1" v-if="!reader.iccid && !reader.card_number">
-              <span class="text-weight-medium text-grey-6">EMPTY SLOT</span>
+              <span class="text-weight-medium text-grey-6">LEGE SLEUF</span>
             </q-item-label>
           </q-item-section>
           <q-item-section side v-if="reader.iccid && !reader.card_number">

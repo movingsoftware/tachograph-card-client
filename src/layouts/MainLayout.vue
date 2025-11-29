@@ -3,10 +3,10 @@
     <q-header elevated class="bg-white text-primary">
       <q-toolbar>
         <q-toolbar-title class="q-ml-md title-text">
-          TransportKlok tachograph bridge
+          TransportKlok tachograafbrug
           <q-icon name="mdi-record-circle-outline" class="q-ml-md" color="orange-8" />
         </q-toolbar-title>
-        <div class="q-mr-md text-caption text-grey-8">Server: {{ host || 'configuring...' }}</div>
+        <div class="q-mr-md text-caption text-grey-8">Server: {{ host || 'bezig met configureren...' }}</div>
       </q-toolbar>
     </q-header>
 
@@ -63,18 +63,19 @@ listen('global-notification', (event) => {
     message: string
   }
 
+  const accessMessage =
+    "De applicatie kan de map '~/Documents/tba' niet openen en kan daardoor niet doorgaan. Mogelijk is deze map al aangemaakt door een andere versie van het programma en gelden er lokale toegangsbeperkingen. Een mogelijke oplossing: hernoem de huidige map bijvoorbeeld naar tba1 en start de applicatie opnieuw. De applicatie maakt dan een nieuwe map met de juiste toegangsrechten.".trim()
+
   if (payload.notification_type === 'access') {
     Notify.create({
-      message:
-        "The application cannot access the directory '~/Documents/tba' and cannot continue to operate. Perhaps such a directory has already been created by another version of the program, therefore it has local access restrictions. A possible solution may be: rename the current directory, for example, to tba1 and restart the application. It will create a new directory with the necessary access rights.",
+      message: accessMessage,
       color: 'red',
       position: 'bottom',
       timeout: 999000,
     })
   } else if (payload.notification_type === 'version') {
     Notify.create({
-      message:
-        "The application cannot access the directory '~/Documents/tba' and cannot continue to operate. Perhaps such a directory has already been created by another version of the program, therefore it has local access restrictions. A possible solution may be: rename the current directory, for example, to tba1 and restart the application. It will create a new directory with the necessary access rights.",
+      message: accessMessage,
       color: 'green',
       position: 'bottom',
       timeout: 15000,

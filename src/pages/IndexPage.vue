@@ -5,17 +5,17 @@
         <div class="row items-start justify-between q-col-gutter-md">
           <div class="col">
             <div class="text-overline text-uppercase text-weight-bold text-white">Transportklok Tacho</div>
-            <div class="text-h5 text-white q-mt-xs">Tachograph card authentication hub</div>
+            <div class="text-h5 text-white q-mt-xs">Authenticatiehub voor tachograafkaarten</div>
             <div class="text-body2 text-white q-mt-sm">
-              Connect your tachograph company cards to TransportKlok and TrackMijn automatically.
+              Koppel je tachograaf bedrijfskaarten automatisch met TransportKlok en TrackMijn.
             </div>
             <div class="text-caption text-white q-mt-md">
-              Server: {{ flespiHost || 'waiting for configuration' }}
+              Server: {{ flespiHost || 'wacht op configuratie' }}
             </div>
           </div>
           <div class="col-auto column items-end q-gutter-xs">
             <q-chip :color="authState === 'ready' ? 'green' : 'orange'" text-color="white" icon="mdi-shield-check">
-              {{ authState === 'ready' ? 'Authenticated' : 'Authentication required' }}
+              {{ authState === 'ready' ? 'Geauthenticeerd' : 'Authenticatie vereist' }}
             </q-chip>
             <q-chip v-if="organizationName" outline color="white" text-color="white" icon="business">
               {{ organizationName }}
@@ -32,7 +32,7 @@
       <q-card class="status-card" flat bordered>
         <q-card-section class="row items-center justify-between">
           <div>
-            <div class="text-subtitle1 text-weight-bold">TransportKlok session</div>
+            <div class="text-subtitle1 text-weight-bold">TransportKlok-sessie</div>
             <div class="text-caption text-grey-7">{{ statusMessage }}</div>
           </div>
           <div class="row items-center q-gutter-sm">
@@ -42,7 +42,7 @@
               unelevated
               :loading="isRequestingLogin || isCheckingLogin"
               icon="mdi-login"
-              label="Sign in with TransportKlok"
+              label="Inloggen met TransportKlok"
               @click="startLogin"
             />
             <q-btn
@@ -51,7 +51,7 @@
               flat
               icon="mdi-refresh"
               :loading="isCheckingLogin"
-              label="Re-check"
+              label="Opnieuw controleren"
               @click="refreshSession"
             />
           </div>
@@ -60,25 +60,25 @@
         <q-card-section>
           <div class="row q-col-gutter-md">
             <div class="col-12 col-md-6">
-              <div class="text-body1 text-weight-medium">Authentication steps</div>
+              <div class="text-body1 text-weight-medium">Authenticatiestappen</div>
               <ol class="text-body2 text-grey-8 q-mt-sm">
-                <li>Launch the TransportKlok login from this device.</li>
-                <li>Finish signing in using the browser that opens.</li>
-                <li>Return to the app; we will verify and create the device and session tokens automatically.</li>
+                <li>Start de TransportKlok-login vanaf dit apparaat.</li>
+                <li>Rond het inloggen af in de geopende browser.</li>
+                <li>Keer terug naar de app; wij controleren en maken automatisch de apparaat- en sessietokens aan.</li>
               </ol>
               <div class="text-caption text-positive q-mt-sm" v-if="pendingToken">
-                Waiting for confirmation of token <strong>{{ pendingToken }}</strong>...
+                Wachten op bevestiging van token <strong>{{ pendingToken }}</strong>...
               </div>
             </div>
             <div class="col-12 col-md-6">
-              <div class="text-body1 text-weight-medium">TrackMijn connection</div>
+              <div class="text-body1 text-weight-medium">TrackMijn-verbinding</div>
               <div class="text-body2 text-grey-8 q-mt-sm">
-                Once logged in, we generate a TrackMijn API token and ensure your tachograph bridge client exists so the
-                Flespi setup stays in sync.
+                Na het inloggen genereren we een TrackMijn API-token en controleren we of je tachograafbridgeclient bestaat,
+                zodat de Flespi-configuratie synchroon blijft.
               </div>
               <div class="text-caption q-mt-sm">
-                Company ID: <strong>{{ trackmijnCompanyId || 'not available' }}</strong><br />
-                Bridge identifier: <strong>{{ trackmijnClientIdentifier }}</strong>
+                Bedrijfs-ID: <strong>{{ trackmijnCompanyId || 'niet beschikbaar' }}</strong><br />
+                Bridge-identificatie: <strong>{{ trackmijnClientIdentifier }}</strong>
               </div>
             </div>
           </div>
@@ -107,7 +107,7 @@ const POLL_INTERVAL_MS = 5000
 const MAX_POLL_DURATION_MS = 5 * 60 * 1000
 
 const authState = ref<'loading' | 'needs-login' | 'ready'>('loading')
-const statusMessage = ref('Checking TransportKlok session...')
+const statusMessage = ref('TransportKlok-sessie wordt gecontroleerd...')
 const user = ref<TransportklokUser | null>(null)
 const pendingToken = ref<string>('')
 const pollInterval = ref<number | undefined>(undefined)
@@ -158,26 +158,26 @@ function handleBlur() {
 
 async function refreshSession() {
   isCheckingLogin.value = true
-  statusMessage.value = 'Validating stored TransportKlok session...'
+  statusMessage.value = 'Opgeslagen TransportKlok-sessie wordt gevalideerd...'
 
   try {
     const currentUser = await transportklokService.ensureSession()
     user.value = currentUser
     await transportklokService.ensureTrackmijnSetup()
-    statusMessage.value = 'Authenticated with TransportKlok and TrackMijn.'
+    statusMessage.value = 'Geauthenticeerd bij TransportKlok en TrackMijn.'
     authState.value = 'ready'
   } catch (error) {
     authState.value = 'needs-login'
     if (error instanceof RoleNotAllowedError) {
       Notify.create({
-        message: 'This account type is not allowed to use the tachograph bridge.',
+        message: 'Dit accounttype mag de tachograafbrug niet gebruiken.',
         color: 'negative',
         position: 'bottom',
       })
       statusMessage.value = error.message
       transportklokService.clearAuth()
     } else {
-      statusMessage.value = (error as Error).message || 'Please sign in to TransportKlok.'
+      statusMessage.value = (error as Error).message || 'Meld je aan bij TransportKlok.'
     }
   } finally {
     isCheckingLogin.value = false
@@ -186,17 +186,17 @@ async function refreshSession() {
 
 async function startLogin() {
   isRequestingLogin.value = true
-  statusMessage.value = 'Requesting TransportKlok authentication token...'
+  statusMessage.value = 'TransportKlok-authenticatietoken wordt aangevraagd...'
   clearPoll()
 
   try {
     const response = await transportklokService.requestDeviceAuthentication()
     pendingToken.value = response.token
     window.open(response.url, '_blank')
-    statusMessage.value = 'Complete the login in your browser, we will verify automatically.'
+    statusMessage.value = 'Voltooi de aanmelding in je browser; wij controleren dit automatisch.'
     beginPolling()
   } catch (error) {
-    statusMessage.value = (error as Error).message || 'Unable to start login.'
+    statusMessage.value = (error as Error).message || 'Kan de aanmelding niet starten.'
   } finally {
     isRequestingLogin.value = false
   }
@@ -231,27 +231,27 @@ async function checkLoginStatus() {
     }
   } catch (error) {
     clearPoll()
-    statusMessage.value = (error as Error).message || 'Login verification failed.'
+    statusMessage.value = (error as Error).message || 'Verificatie van de aanmelding is mislukt.'
   }
 }
 
 async function finalizeLogin() {
-  statusMessage.value = 'Completing device registration...'
+  statusMessage.value = 'Apparaatregistratie wordt voltooid...'
   try {
     const currentUser = await transportklokService.completeDeviceLogin(pendingToken.value)
     user.value = currentUser
     await transportklokService.ensureTrackmijnSetup()
-    statusMessage.value = 'Authenticated with TransportKlok and TrackMijn.'
+    statusMessage.value = 'Geauthenticeerd bij TransportKlok en TrackMijn.'
     authState.value = 'ready'
   } catch (error) {
     if (error instanceof RoleNotAllowedError) {
       Notify.create({
-        message: 'This account type is not allowed to use the tachograph bridge.',
+        message: 'Dit accounttype mag de tachograafbrug niet gebruiken.',
         color: 'negative',
         position: 'bottom',
       })
     }
-    statusMessage.value = (error as Error).message || 'Authentication failed.'
+    statusMessage.value = (error as Error).message || 'Authenticatie is mislukt.'
     authState.value = 'needs-login'
   } finally {
     pendingToken.value = ''
