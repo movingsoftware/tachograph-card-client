@@ -36,8 +36,8 @@
     "macOS": {
       "frameworks": [],
       "minimumSystemVersion": "10.13",
-      "signingIdentity": "@env:APPLE_IDENTITY",
-      "providerShortName": "@env:APPLE_TEAM_ID",
+      "signingIdentity": "Developer ID Application: KoeriersKlok (9UHZ3723YU)",
+      "providerShortName": "9UHZ3723YU",
       "entitlements": "entitlements.plist"
     }
   }
