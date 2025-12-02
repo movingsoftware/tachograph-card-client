@@ -1,7 +1,13 @@
 import { openUrl } from '@tauri-apps/plugin-opener'
 import { Notify } from 'quasar'
 import { computed, ref } from 'vue'
-import { RoleNotAllowedError, transportklokService, type TransportklokUser } from './transportklok'
+import {
+  RoleNotAllowedError,
+  TransportklokOutdatedError,
+  transportklokService,
+  type TransportklokUser,
+} from './transportklok'
+import { markTransportklokOutdated } from './outdatedApp'
 
 const POLL_INTERVAL_MS = 5000
 const MAX_POLL_DURATION_MS = 5 * 60 * 1000
@@ -62,6 +68,17 @@ const clearPoll = () => {
   pollStartedAt.value = null
 }
 
+const handleTransportklokOutdated = (error: unknown): error is TransportklokOutdatedError => {
+  if (error instanceof TransportklokOutdatedError) {
+    markTransportklokOutdated(error.message)
+    clearPoll()
+    authState.value = 'needs-login'
+    statusMessage.value = error.message
+    return true
+  }
+  return false
+}
+
 const refreshSession = async () => {
   isCheckingLogin.value = true
   statusMessage.value = 'Opgeslagen TransportKlok-sessie wordt gevalideerd...'
@@ -74,6 +91,9 @@ const refreshSession = async () => {
     authState.value = 'ready'
     persistConnectionState()
   } catch (error) {
+    if (handleTransportklokOutdated(error)) {
+      return
+    }
     authState.value = 'needs-login'
     if (error instanceof RoleNotAllowedError) {
       Notify.create({
@@ -122,6 +142,9 @@ const pollForSession = async () => {
       persistConnectionState()
     }
   } catch (error) {
+    if (handleTransportklokOutdated(error)) {
+      return
+    }
     statusMessage.value = (error as Error).message || 'Kan authenticatietoken niet controleren.'
   }
 }
@@ -150,6 +173,9 @@ const startLogin = async () => {
     statusMessage.value = 'Voltooi de aanmelding in je browser; wij controleren dit automatisch.'
     beginPolling()
   } catch (error) {
+    if (handleTransportklokOutdated(error)) {
+      return
+    }
     statusMessage.value = (error as Error).message || 'Kan de aanmelding niet starten.'
   } finally {
     isRequestingLogin.value = false
