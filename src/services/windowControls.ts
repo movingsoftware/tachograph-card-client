@@ -1,35 +1,37 @@
 import type { UnlistenFn } from '@tauri-apps/api/event'
-import { appWindow } from '@tauri-apps/api/window'
+import { getCurrentWindow } from '@tauri-apps/api/window'
 
 export async function minimizeWindow(): Promise<void> {
-  await appWindow.minimize()
+  await getCurrentWindow().minimize()
 }
 
 export async function closeWindow(): Promise<void> {
-  await appWindow.close()
+  await getCurrentWindow().close()
 }
 
 export async function toggleMaximizeWindow(): Promise<boolean> {
-  const maximized = await appWindow.isMaximized()
+  const maximized = await getCurrentWindow().isMaximized()
 
   if (maximized) {
-    await appWindow.unmaximize()
+    await getCurrentWindow().unmaximize()
     return false
   }
 
-  await appWindow.maximize()
+  await getCurrentWindow().maximize()
   return true
 }
 
 export function isWindowMaximized(): Promise<boolean> {
-  return appWindow.isMaximized()
+  return getCurrentWindow().isMaximized()
 }
 
 export async function listenToWindowResize(
   callback: (isMaximized: boolean) => void
 ): Promise<UnlistenFn> {
-  const unlisten = await appWindow.onResized(async () => {
-    callback(await appWindow.isMaximized())
+  const unlisten = await getCurrentWindow().onResized(() => {
+    getCurrentWindow().isMaximized().then((isMaximized) => {
+      callback(isMaximized)
+    })
   })
 
   return unlisten

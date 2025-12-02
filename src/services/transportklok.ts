@@ -449,7 +449,7 @@ export class TransportklokService {
     return true
   }
 
-  async deleteTachoBridgeClient(deviceId: string, retry = true) {
+  async deleteTachoBridgeClient(deviceId: string, retry = true): Promise<void> {
     if (!this.trackmijnCompanyId) {
       await this.createTrackmijnToken(true)
     }
