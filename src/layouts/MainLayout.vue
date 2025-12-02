@@ -27,15 +27,20 @@
 
 <script setup lang="ts">
 import { useQuasar, Notify } from 'quasar'
-import { computed } from 'vue'
+import { computed, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { listen } from '@tauri-apps/api/event'
 import 'animate.css'
 import { transportklokService } from '../services/transportklok'
 import { useConnectionManager } from '../services/connectionManager'
 import CustomTitleBar from '../components/CustomTitleBar.vue'
+import { useTransportklokOutdatedState } from '../services/outdatedApp'
 
 const $q = useQuasar()
 const { isConnected, connect, disconnect, isCheckingLogin, isRequestingLogin } = useConnectionManager()
+const { isTransportklokOutdated } = useTransportklokOutdatedState()
+const router = useRouter()
+const route = useRoute()
 
 const headerClass = computed(() =>
   isConnected.value ? 'bg-positive text-white header-border' : 'bg-white text-primary header-border'
@@ -48,6 +53,16 @@ const toggleConnection = async () => {
     void connect()
   }
 }
+
+watch(
+  isTransportklokOutdated,
+  (value) => {
+    if (value && route.path !== '/outdated') {
+      void router.replace('/outdated')
+    }
+  },
+  { immediate: true }
+)
 
 const changeTheme = (value: string) => {
   switch (value) {

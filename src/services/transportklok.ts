@@ -34,6 +34,13 @@ export class RoleNotAllowedError extends Error {
   }
 }
 
+export class TransportklokOutdatedError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'TransportklokOutdatedError'
+  }
+}
+
 type ServerTheme = 'Auto' | 'Dark' | 'Light'
 
 const DEVICE_TOKEN_KEY = 'transportklok_device_token'
@@ -97,6 +104,14 @@ function getAppVersion(): string {
 
 function getAppKey(): string|null {
   return '747b4beacb8e2f2962d3037cda03b234e8a5fa432cab2df9d7af396d2e5d7ae0'
+}
+
+function throwIfOutdated(response: Response) {
+  if (response.status === 412) {
+    throw new TransportklokOutdatedError(
+      'Deze versie van de applicatie is verouderd. Download de nieuwste versie om verder te gaan.'
+    )
+  }
 }
 
 function buildDeviceDetails() {
@@ -217,6 +232,8 @@ export class TransportklokService {
       }),
     })
 
+    throwIfOutdated(response)
+
     if (!response.ok) {
       throw new Error('Kon TransportKlok-apparatauthenticatie niet starten')
     }
@@ -236,6 +253,8 @@ export class TransportklokService {
         method: 'GET',
       }
     )
+
+    throwIfOutdated(response)
 
     if (response.status === 404) {
       return false
@@ -264,6 +283,8 @@ export class TransportklokService {
       body: JSON.stringify({ token, ...buildDeviceDetails() }),
     })
 
+    throwIfOutdated(response)
+
     if (!response.ok) {
       throw new Error('Registreren van apparaat mislukt')
     }
@@ -288,6 +309,8 @@ export class TransportklokService {
         Authorization: `Bearer ${this.deviceToken}`,
       },
     })
+
+    throwIfOutdated(response)
 
     if (!response.ok) {
       throw new Error('Maken van sessie uit apparaattoken mislukt')
@@ -319,6 +342,8 @@ export class TransportklokService {
         ...(init.headers || {}),
       },
     })
+
+    throwIfOutdated(response)
 
     if (response.status === 401 && retrySession && this.deviceToken) {
       await this.createSessionFromDevice()
