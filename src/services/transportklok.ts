@@ -92,7 +92,11 @@ async function parseJson<T>(response: Response): Promise<T | undefined> {
 }
 
 function getAppVersion(): string {
-  return (import.meta as { env: Record<string, string> }).env.PACKAGE_VERSION || 'transportklok-desktop'
+  return (import.meta as { env: Record<string, string> }).env.APP_VERSION || '0.0.0'
+}
+
+function getAppKey(): string|null {
+  return '747b4beacb8e2f2962d3037cda03b234e8a5fa432cab2df9d7af396d2e5d7ae0'
 }
 
 function buildDeviceDetails() {
@@ -102,7 +106,7 @@ function buildDeviceDetails() {
     device_platform: (nav as { userAgentData?: { platform?: string } } | undefined)?.userAgentData?.platform ?? nav?.platform ?? 'web',
     device_model: nav?.vendor ?? 'browser',
     os_version: nav?.appVersion ?? 'unknown',
-    app_version: getAppVersion(),
+    application_version: getAppVersion(),
     device_manufacturer: 'TransportKlok',
   }
 }
@@ -207,7 +211,10 @@ export class TransportklokService {
     const response = await fetch(`${this.transportklokBase}/auth/device/authentication-token`, {
       method: 'POST',
       headers: buildJsonHeaders(),
-      body: JSON.stringify({ mode: 'web' }),
+      body: JSON.stringify({
+        mode: 'web',
+        application_key: getAppKey()
+      }),
     })
 
     if (!response.ok) {

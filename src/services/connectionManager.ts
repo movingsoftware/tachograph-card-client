@@ -76,7 +76,7 @@ const pollForSession = async () => {
       statusMessage.value = 'Bevestiging ontvangen, sessie wordt aangemaakt...'
       const currentUser = await transportklokService.completeDeviceLogin(token)
       user.value = currentUser
-      await transportklokService.ensureTrackmijnSetup(true)
+      await transportklokService.ensureTrackmijnSetup()
       statusMessage.value = 'Verbonden met TransportKlok en TrackMijn.'
       authState.value = 'ready'
       pendingToken.value = ''
