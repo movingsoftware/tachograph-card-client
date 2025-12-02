@@ -36,9 +36,9 @@ const headerClass = computed(() =>
   isConnected.value ? 'bg-positive text-white header-border' : 'bg-white text-primary header-border'
 )
 
-const toggleConnection = () => {
+const toggleConnection = async () => {
   if (isConnected.value) {
-    disconnect()
+    await disconnect()
   } else {
     void connect()
   }

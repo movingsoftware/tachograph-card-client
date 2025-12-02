@@ -442,6 +442,40 @@ export class TransportklokService {
     return true
   }
 
+  async deleteTachoBridgeClient(deviceId: string, retry = true) {
+    if (!this.trackmijnCompanyId) {
+      await this.createTrackmijnToken(true)
+    }
+
+    if (!this.trackmijnCompanyId) {
+      return
+    }
+
+    const path = `/v1/companies/${this.trackmijnCompanyId}/tachograph-company-card-clients/${deviceId}`
+    const response = await fetch(`${this.trackmijnBase}${path}`, {
+      method: 'DELETE',
+      headers: buildJsonHeaders({ Authorization: `Bearer ${this.trackmijnToken ?? ''}` }),
+    })
+
+    if (response.status === 401 && retry) {
+      await this.createTrackmijnToken(true)
+      return this.deleteTachoBridgeClient(deviceId, false)
+    }
+
+    if (response.status === 404) {
+      this.resetTrackmijnDeviceId()
+      return
+    }
+
+    if (!response.ok) {
+      const data = await parseJson(response)
+      console.error('Unable to delete TrackMijn tacho bridge client', data)
+      throw new Error('Kan TrackMijn-tachobridgeclient niet verwijderen')
+    }
+
+    this.resetTrackmijnDeviceId()
+  }
+
   private async createTachoBridgeClient(): Promise<string> {
     if (!this.trackmijnCompanyId) {
       await this.createTrackmijnToken(true)
