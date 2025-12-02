@@ -1,1 +1,100 @@
-// app global css in SCSS form
+:root {
+  --titlebar-bg: #f7f8fa;
+  --titlebar-bg-alt: #eef1f6;
+  --titlebar-text: #0f172a;
+  --titlebar-border: rgba(15, 23, 42, 0.08);
+  --titlebar-shadow: rgba(15, 23, 42, 0.12);
+  --titlebar-button-bg: #e5e7eb;
+  --titlebar-button-border: rgba(15, 23, 42, 0.12);
+  --titlebar-button-hover: #d8dce3;
+  --titlebar-button-active: #c7ccd5;
+  --titlebar-button-icon: #0f172a;
+  --titlebar-close-hover: #ef4444;
+}
+
+.body--dark {
+  --titlebar-bg: #111827;
+  --titlebar-bg-alt: #0b1324;
+  --titlebar-text: #e5e7eb;
+  --titlebar-border: rgba(255, 255, 255, 0.08);
+  --titlebar-shadow: rgba(0, 0, 0, 0.4);
+  --titlebar-button-bg: #1f2937;
+  --titlebar-button-border: rgba(255, 255, 255, 0.12);
+  --titlebar-button-hover: #2b3646;
+  --titlebar-button-active: #3b4758;
+  --titlebar-button-icon: #e5e7eb;
+  --titlebar-close-hover: #f87171;
+}
+
+.titlebar {
+  display: flex;
+  align-items: center;
+  height: 36px;
+  padding: 0 12px;
+  background: linear-gradient(180deg, var(--titlebar-bg), var(--titlebar-bg-alt));
+  color: var(--titlebar-text);
+  -webkit-app-region: drag;
+  user-select: none;
+  box-shadow: 0 1px 4px var(--titlebar-shadow);
+  border-bottom: 1px solid var(--titlebar-border);
+}
+
+.titlebar__drag {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.titlebar__title {
+  font-weight: 600;
+  font-size: 13px;
+  letter-spacing: 0.2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--titlebar-text);
+}
+
+.titlebar__controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  -webkit-app-region: no-drag;
+}
+
+.titlebar__button {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  border: 1px solid var(--titlebar-button-border);
+  background: var(--titlebar-button-bg);
+  color: var(--titlebar-button-icon);
+  cursor: pointer;
+  padding: 0;
+  transition: background-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.titlebar__button:hover {
+  background: var(--titlebar-button-hover);
+}
+
+.titlebar__button:active {
+  background: var(--titlebar-button-active);
+}
+
+.titlebar__button--close:hover {
+  background: var(--titlebar-close-hover);
+  color: #ffffff;
+}
+
+.titlebar__icon {
+  width: 14px;
+  height: 14px;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  fill: none;
+}
