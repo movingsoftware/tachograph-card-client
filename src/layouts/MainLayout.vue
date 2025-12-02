@@ -1,12 +1,17 @@
 <template>
   <q-layout view="lHh Lpr lFf">
-    <q-header elevated class="bg-white text-primary">
-      <q-toolbar>
-        <q-toolbar-title class="q-ml-md title-text">
-          TransportKlok tachograafbrug
-          <q-icon name="mdi-record-circle-outline" class="q-ml-md" color="orange-8" />
-        </q-toolbar-title>
-        <div class="q-mr-md text-caption text-grey-8">Server: {{ host || 'bezig met configureren...' }}</div>
+    <q-header elevated :class="headerClass">
+      <q-toolbar class="toolbar">
+        <div class="title-text">TransportKlok tachograafbrug</div>
+        <q-btn
+          :label="isConnected ? 'Verbreek verbinding' : 'Verbind applicatie'"
+          :color="isConnected ? 'white' : 'primary'"
+          :text-color="isConnected ? 'positive' : 'white'"
+          unelevated
+          :loading="isCheckingLogin || isRequestingLogin"
+          @click="toggleConnection"
+          class="connection-btn"
+        />
       </q-toolbar>
     </q-header>
 
@@ -18,13 +23,26 @@
 
 <script setup lang="ts">
 import { useQuasar, Notify } from 'quasar'
-import { ref } from 'vue'
+import { computed } from 'vue'
 import { listen } from '@tauri-apps/api/event'
 import 'animate.css'
 import { transportklokService } from '../services/transportklok'
+import { useConnectionManager } from '../services/connectionManager'
 
-const host = ref('')
 const $q = useQuasar()
+const { isConnected, connect, disconnect, isCheckingLogin, isRequestingLogin } = useConnectionManager()
+
+const headerClass = computed(() =>
+  isConnected.value ? 'bg-positive text-white header-border' : 'bg-white text-primary header-border'
+)
+
+const toggleConnection = () => {
+  if (isConnected.value) {
+    disconnect()
+  } else {
+    void connect()
+  }
+}
 
 const changeTheme = (value: string) => {
   switch (value) {
@@ -49,7 +67,6 @@ listen('global-config-server', (event) => {
     dark_theme: string
   }
 
-  host.value = payload.host
   changeTheme(payload.dark_theme)
   transportklokService.setServerConfigFromBackend(payload.host, payload.ident, payload.dark_theme)
   void transportklokService.applyFlespiServerConfig()
@@ -93,5 +110,19 @@ listen('global-notification', (event) => {
 .title-text {
   font-weight: 700;
   letter-spacing: 0.5px;
+}
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 16px;
+}
+
+.connection-btn {
+  min-width: 180px;
+}
+
+.header-border {
+  border-bottom: 1px solid #e5e7eb;
 }
 </style>
