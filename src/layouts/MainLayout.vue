@@ -1,24 +1,28 @@
 <template>
-  <q-layout view="lHh Lpr lFf">
-    <q-header elevated :class="headerClass">
-      <q-toolbar class="toolbar">
-        <div class="title-text">TransportKlok tachograafbrug</div>
-        <q-btn
-          :label="isConnected ? 'Verbreek verbinding' : 'Verbind applicatie'"
-          :color="isConnected ? 'white' : 'primary'"
-          :text-color="isConnected ? 'positive' : 'white'"
-          unelevated
-          :loading="isCheckingLogin || isRequestingLogin"
-          @click="toggleConnection"
-          class="connection-btn"
-        />
-      </q-toolbar>
-    </q-header>
+  <div class="window-shell">
+    <custom-title-bar />
 
-    <q-page-container>
-      <router-view />
-    </q-page-container>
-  </q-layout>
+    <q-layout view="lHh Lpr lFf" class="window-shell__layout">
+      <q-header elevated :class="headerClass">
+        <q-toolbar class="toolbar">
+          <div class="title-text">TransportKlok tachograafbrug</div>
+          <q-btn
+            :label="isConnected ? 'Verbreek verbinding' : 'Verbind applicatie'"
+            :color="isConnected ? 'white' : 'primary'"
+            :text-color="isConnected ? 'positive' : 'white'"
+            unelevated
+            :loading="isCheckingLogin || isRequestingLogin"
+            @click="toggleConnection"
+            class="connection-btn"
+          />
+        </q-toolbar>
+      </q-header>
+
+      <q-page-container>
+        <router-view />
+      </q-page-container>
+    </q-layout>
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -28,6 +32,7 @@ import { listen } from '@tauri-apps/api/event'
 import 'animate.css'
 import { transportklokService } from '../services/transportklok'
 import { useConnectionManager } from '../services/connectionManager'
+import CustomTitleBar from '../components/CustomTitleBar.vue'
 
 const $q = useQuasar()
 const { isConnected, connect, disconnect, isCheckingLogin, isRequestingLogin } = useConnectionManager()
@@ -36,9 +41,9 @@ const headerClass = computed(() =>
   isConnected.value ? 'bg-positive text-white header-border' : 'bg-white text-primary header-border'
 )
 
-const toggleConnection = () => {
+const toggleConnection = async () => {
   if (isConnected.value) {
-    disconnect()
+    await disconnect()
   } else {
     void connect()
   }
@@ -107,6 +112,17 @@ listen('global-notification', (event) => {
 </script>
 
 <style scoped>
+.window-shell {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.window-shell__layout {
+  flex: 1;
+  min-height: 0;
+}
+
 .title-text {
   font-weight: 700;
   letter-spacing: 0.5px;

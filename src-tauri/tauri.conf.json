@@ -15,6 +15,7 @@
         "title": "tba",
         "width": 620,
         "height": 400,
+        "decorations": false,
         "resizable": true,
         "fullscreen": false
       }

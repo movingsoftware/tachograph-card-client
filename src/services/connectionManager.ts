@@ -5,6 +5,11 @@ import { RoleNotAllowedError, transportklokService, type TransportklokUser } fro
 
 const POLL_INTERVAL_MS = 5000
 const MAX_POLL_DURATION_MS = 5 * 60 * 1000
+const CONNECTION_STATE_KEY = 'transportklok_connection_state'
+
+type StoredConnectionState = {
+  pendingToken?: string
+}
 
 const authState = ref<'loading' | 'needs-login' | 'ready'>('loading')
 const statusMessage = ref('TransportKlok-sessie wordt gecontroleerd...')
@@ -16,6 +21,38 @@ const isRequestingLogin = ref(false)
 const isCheckingLogin = ref(false)
 
 const isConnected = computed(() => authState.value === 'ready')
+
+const persistConnectionState = () => {
+  const state: StoredConnectionState = {}
+  if (pendingToken.value) {
+    state.pendingToken = pendingToken.value
+  }
+
+  if (state.pendingToken) {
+    localStorage.setItem(CONNECTION_STATE_KEY, JSON.stringify(state))
+  } else {
+    localStorage.removeItem(CONNECTION_STATE_KEY)
+  }
+}
+
+const restoreConnectionState = () => {
+  const raw = localStorage.getItem(CONNECTION_STATE_KEY)
+  if (!raw) {
+    return
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as StoredConnectionState
+    if (parsed.pendingToken) {
+      pendingToken.value = parsed.pendingToken
+      statusMessage.value = 'Eerder aangevraagde authenticatie wordt gecontroleerd...'
+      authState.value = 'needs-login'
+      beginPolling()
+    }
+  } catch (error) {
+    console.warn('Kon opgeslagen verbindingsstatus niet herstellen', error)
+  }
+}
 
 const clearPoll = () => {
   if (pollInterval.value) {
@@ -35,6 +72,7 @@ const refreshSession = async () => {
     await transportklokService.ensureTrackmijnSetup()
     statusMessage.value = 'Verbonden met TransportKlok en TrackMijn.'
     authState.value = 'ready'
+    persistConnectionState()
   } catch (error) {
     authState.value = 'needs-login'
     if (error instanceof RoleNotAllowedError) {
@@ -60,6 +98,7 @@ const pollForSession = async () => {
     isRequestingLogin.value = false
     authState.value = 'needs-login'
     pendingToken.value = ''
+    persistConnectionState()
     return
   }
 
@@ -80,6 +119,7 @@ const pollForSession = async () => {
       statusMessage.value = 'Verbonden met TransportKlok en TrackMijn.'
       authState.value = 'ready'
       pendingToken.value = ''
+      persistConnectionState()
     }
   } catch (error) {
     statusMessage.value = (error as Error).message || 'Kan authenticatietoken niet controleren.'
@@ -105,6 +145,7 @@ const startLogin = async () => {
   try {
     const response = await transportklokService.requestDeviceAuthentication()
     pendingToken.value = response.token
+    persistConnectionState()
     await openUrl(response.url)
     statusMessage.value = 'Voltooi de aanmelding in je browser; wij controleren dit automatisch.'
     beginPolling()
@@ -115,17 +156,36 @@ const startLogin = async () => {
   }
 }
 
-const disconnect = () => {
+const disconnect = async () => {
   clearPoll()
   pendingToken.value = ''
   user.value = null
-  transportklokService.clearAuth()
-  authState.value = 'needs-login'
-  statusMessage.value = 'Niet verbonden met TransportKlok.'
+  persistConnectionState()
+  const { deviceId } = transportklokService.getTrackmijnInfo()
+
+  try {
+    if (deviceId) {
+      statusMessage.value = 'Verbinding wordt verbroken...'
+      await transportklokService.deleteTachoBridgeClient(deviceId)
+    }
+  } catch (error) {
+    console.error('Kon TrackMijn-client niet verwijderen', error)
+    Notify.create({
+      message: (error as Error).message || 'Kon TrackMijn-client niet verwijderen',
+      color: 'negative',
+      position: 'bottom',
+    })
+  } finally {
+    transportklokService.clearAuth()
+    authState.value = 'needs-login'
+    statusMessage.value = 'Niet verbonden met TransportKlok.'
+    persistConnectionState()
+  }
 }
 
 const initializeConnection = async () => {
   await transportklokService.applyFlespiServerConfig()
+  restoreConnectionState()
   await refreshSession()
 }
 
