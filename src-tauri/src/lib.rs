@@ -1,12 +1,11 @@
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
-
 // ───── Modules ─────
-mod app_connect;        // Application connection to the MQTT broker.
-mod config;             // Configuration handling.
-mod logger;             // Logging functionality.
-mod mqtt;               // MQTT communication.
-mod smart_card;         // PCSC module for smart card operations.
-mod global_app_handle;  // Global access to app state and emitters.
+mod app_connect; // Application connection to the MQTT broker.
+mod config; // Configuration handling.
+mod global_app_handle;
+mod logger; // Logging functionality.
+mod mqtt; // MQTT communication.
+mod smart_card; // PCSC module for smart card operations. // Global access to app state and emitters.
 
 // ───── External Crates ─────
 use tauri::{async_runtime, Listener, Manager, WindowEvent}; // Tauri application framework and async runtime.
@@ -14,7 +13,8 @@ use tauri::{async_runtime, Listener, Manager, WindowEvent}; // Tauri application
 pub fn run() {
     // start builder to run tauri applicationrustup target add aarch64-pc-windows-msvc
     tauri::Builder::default()
-        .setup(move |app| {            
+        .plugin(tauri_plugin_opener::init())
+        .setup(move |app| {
             // Obtain a lightweight reference to the app for convenient interaction
             let app_handle = app.app_handle();
 
@@ -36,11 +36,13 @@ pub fn run() {
                 // Frontend loading is late, so we execute a callback to the "frontend-loaded" event which the front sends when it is loaded
                 window.listen("frontend-loaded", move |event: tauri::Event| {
                     #[cfg(target_os = "linux")]
-                    {   // Temporary solution only for linux because webview does not load even after response from front.
+                    {
+                        // Temporary solution only for linux because webview does not load even after response from front.
                         // Apparently loading occurs later, not like Windows and MacOS. Fix later.
                         std::thread::sleep(std::time::Duration::from_millis(300));
                     }
-                    #[cfg(target_os = "windows")] {
+                    #[cfg(target_os = "windows")]
+                    {
                         std::thread::sleep(std::time::Duration::from_millis(300));
                     }
 
@@ -94,9 +96,9 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             config::update_card,           // update list of cards from the frontend
             config::update_server,         // update server config from the frontend
-            config::remove_card,            // remove card from config
+            config::remove_card,           // remove card from config
             smart_card::manual_sync_cards, // manual sync cards from the frontend
-            app_connect::app_connection,     // App connection to the MQTT broker
+            app_connect::app_connection,   // App connection to the MQTT broker
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

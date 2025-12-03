@@ -1,6 +1,10 @@
 import { invoke } from '@tauri-apps/api/core'
 import type { SmartCard } from '../components/models'
 
+type GetAllResponse<T> = {
+  data: T
+}
+
 export type TransportklokUser = {
   id?: string
   email?: string
@@ -29,7 +33,10 @@ type TrackmijnTokenResponse = {
 }
 
 type TrackmijnCard = {
-  card_number?: string
+  name: string
+  configuration: {
+    ident: string
+  }
 }
 
 export class RoleNotAllowedError extends Error {
@@ -480,13 +487,13 @@ export class TransportklokService {
       return []
     }
 
-    return this.trackmijnRequest<TrackmijnCard[]>(
+    return this.trackmijnRequest<GetAllResponse<TrackmijnCard[]>>(
       `/v1/companies/${this.trackmijnCompanyId}/tachograph-company-cards`,
       { method: 'GET', headers: buildJsonHeaders() }
-    )
+    ).then((data) => data.data);
   }
 
-  private async createTrackmijnCard(cardNumber: string, cardData?: SmartCard, retry = true): Promise<void> {
+  public async createTrackmijnCard(cardNumber: string, cardData?: SmartCard, retry = true): Promise<void> {
     if (!this.trackmijnCompanyId) {
       await this.createTrackmijnToken(true)
     }
@@ -528,8 +535,9 @@ export class TransportklokService {
     }
 
     const existingCards = await this.fetchTrackmijnCards()
+    console.log(existingCards)
     const existingNumbers = new Set(
-      existingCards.map((card) => (card.card_number ? card.card_number.toUpperCase() : null)).filter(Boolean) as string[]
+      existingCards.map((card) => (card.configuration.ident ? card.configuration.ident.toUpperCase() : null)).filter(Boolean) as string[]
     )
 
     for (const [cardNumber, cardData] of Object.entries(this.localCards)) {

@@ -3,27 +3,27 @@
 //! This module provides functionality for creating and managing MQTT connections.
 
 // ───── Std Lib ─────
-use std::io::ErrorKind;                  // For categorizing I/O errors.
-use std::time::Duration;                 // For specifying time durations.
+use std::io::ErrorKind; // For categorizing I/O errors.
+use std::time::Duration; // For specifying time durations.
 
 // ───── MQTT Client Library (rumqttc) ─────
-use rumqttc::v5::ConnectionError;        // For handling MQTT connection errors.
+use rumqttc::v5::ConnectionError; // For handling MQTT connection errors.
 use rumqttc::v5::StateError::{self, AwaitPingResp, ServerDisconnect}; // Specific error for server disconnection.
-use rumqttc::v5::{AsyncClient, Event, Incoming, MqttOptions};         // Core MQTT async client and options.
+use rumqttc::v5::{AsyncClient, Event, Incoming, MqttOptions}; // Core MQTT async client and options.
 
 // ───── Smart Card ─────
-use crate::smart_card::TASK_POOL;        // Task pool for managing MQTT connections.
+use crate::smart_card::TASK_POOL; // Task pool for managing MQTT connections.
 
 // ───── Tauri ─────
 use tauri::async_runtime::{self, JoinHandle}; // Async runtime and task join handles for Tauri apps.
 
 // ───── Serialization ─────
-use serde_json::Value;                   // For working with JSON data structures.
+use serde_json::Value; // For working with JSON data structures.
 
 // ───── Local Modules ─────
-use crate::config::get_from_cache;       // Function to get data from cache for syncing server data.
-use crate::config::split_host_to_parts;  // Function to split the host into parts for MQTT connection.
-use crate::config::CacheSection;         // Enum for cache sections for getting data from cache.
+use crate::config::get_from_cache; // Function to get data from cache for syncing server data.
+use crate::config::split_host_to_parts; // Function to split the host into parts for MQTT connection.
+use crate::config::CacheSection; // Enum for cache sections for getting data from cache.
 use crate::smart_card::ProcessingCard;
 
 /// Timeout in seconds to wait before reconnecting to the server.
@@ -51,7 +51,10 @@ pub async fn app_connection() {
     let client_id = get_from_cache(CacheSection::Ident, "ident");
 
     if client_id.is_empty() {
-        log::warn!("client_id: {:?}. ClientID is empty. Cannot ensure connection.", client_id);
+        log::warn!(
+            "client_id: {:?}. ClientID is empty. Cannot ensure connection.",
+            client_id
+        );
         return;
     }
 
@@ -113,7 +116,11 @@ pub async fn app_connection() {
                                     // The "hex" parameter contains the apdu instruction that needs to be transferred to the card
                                 }
                                 Err(e) => {
-                                    log::error!("{} parsing JSON payload issue: {:?}", log_header, e);
+                                    log::error!(
+                                        "{} parsing JSON payload issue: {:?}",
+                                        log_header,
+                                        e
+                                    );
                                 }
                             }
                         }
@@ -168,5 +175,5 @@ pub async fn app_connection() {
             card.reader_name.as_deref().unwrap_or("unknown"),
             card.atr.as_deref().unwrap_or("unknown"),
         );
-    } 
+    }
 }

@@ -3,29 +3,29 @@
 //! This module provides functionality for creating and managing MQTT connections.
 
 // ───── Std Lib ─────
-use std::ffi::CStr;                  // For handling C-style strings in Rust.
-use std::io::ErrorKind;             // For categorizing I/O errors.
-use std::time::Duration;            // For specifying time durations.
+use std::ffi::CStr; // For handling C-style strings in Rust.
+use std::io::ErrorKind; // For categorizing I/O errors.
+use std::time::Duration; // For specifying time durations.
 
 // ───── MQTT Client Library (rumqttc) ─────
-use rumqttc::v5::mqttbytes::QoS;                    // Quality of Service levels for MQTT.
-use rumqttc::v5::ConnectionError;                   // For handling MQTT connection errors.
+use rumqttc::v5::mqttbytes::QoS; // Quality of Service levels for MQTT.
+use rumqttc::v5::ConnectionError; // For handling MQTT connection errors.
 use rumqttc::v5::StateError::{self, AwaitPingResp, ServerDisconnect}; // Specific error for server disconnection.
-use rumqttc::v5::{AsyncClient, Event, Incoming, MqttOptions};        // Core MQTT async client and options.
+use rumqttc::v5::{AsyncClient, Event, Incoming, MqttOptions}; // Core MQTT async client and options.
 
 // ───── Tauri ─────
-use tauri::async_runtime::{self, JoinHandle};       // Async runtime and task join handles for Tauri apps.
+use tauri::async_runtime::{self, JoinHandle}; // Async runtime and task join handles for Tauri apps.
 
 // ───── Serde (Serialization / Deserialization) ─────
-use serde_json::Value;                              // For working with JSON data structures.
+use serde_json::Value; // For working with JSON data structures.
 
 // ───── Local Modules ─────
-use crate::config::get_from_cache;                  // Function to get data from cache for syncing server data.
-use crate::config::split_host_to_parts;             // Function to split the host into parts for MQTT connection.
-use crate::config::CacheSection;                    // Enum for cache sections for getting data from cache.
-use crate::smart_card::{ManagedCard, TASK_POOL};    // Managed card object and global task pool for MQTT handling.
-use crate::global_app_handle::emit_event;           // Sends events to the frontend via global app handle.
+use crate::config::get_from_cache; // Function to get data from cache for syncing server data.
+use crate::config::split_host_to_parts; // Function to split the host into parts for MQTT connection.
+use crate::config::CacheSection; // Enum for cache sections for getting data from cache.
+use crate::global_app_handle::emit_event; // Sends events to the frontend via global app handle.
 use crate::smart_card::ProcessingCard;
+use crate::smart_card::{ManagedCard, TASK_POOL}; // Managed card object and global task pool for MQTT handling.
 
 /// Timeout in seconds to wait before reconnecting to the server.
 ///
@@ -34,13 +34,21 @@ use crate::smart_card::ProcessingCard;
 const SLEEP_DURATION_SECS: u64 = 10;
 
 // /// Ensures an MQTT connection for the specified client ID.
-pub async fn ensure_connection(reader_name: &CStr, client_id: String, atr: String, managed_card: ManagedCard) {
+pub async fn ensure_connection(
+    reader_name: &CStr,
+    client_id: String,
+    atr: String,
+    managed_card: ManagedCard,
+) {
     // Return early if the client_id is empty, as we cannot ensure a connection without a valid ID
     if client_id.is_empty() {
-        log::warn!("Reader: {:?}. ClientID is empty. Cannot ensure connection.", reader_name);
+        log::warn!(
+            "Reader: {:?}. ClientID is empty. Cannot ensure connection.",
+            reader_name
+        );
         return;
     }
-    
+
     // Unlock task_pool mutex
     let mut task_pool = TASK_POOL.lock().await;
 
@@ -91,13 +99,16 @@ pub async fn ensure_connection(reader_name: &CStr, client_id: String, atr: Strin
     // format of the logging header
     let log_header: String = format!("{} |", client_id);
 
-    let mut is_online: bool = false;    // flag to control the card connection (to the server) status
-    let mut was_online = false;   // Flag to track the previous connection status
-    let mut auth_process: bool = false;  // Flag to control the authentication process
+    let mut is_online: bool = false; // flag to control the card connection (to the server) status
+    let mut was_online = false; // Flag to track the previous connection status
+    let mut auth_process: bool = false; // Flag to control the authentication process
 
     // create async task for the mqtt client
     let handle: JoinHandle<()> = async_runtime::spawn(async move {
-        let iccid: String = managed_card.get_iccid().await.expect("ICCID must be initialized");
+        let iccid: String = managed_card
+            .get_iccid()
+            .await
+            .expect("ICCID must be initialized");
 
         loop {
             match eventloop.poll().await {
@@ -107,13 +118,14 @@ pub async fn ensure_connection(reader_name: &CStr, client_id: String, atr: Strin
                         if !was_online {
                             was_online = true;
                             // Send the global-cards-sync event to the frontend that card is connected
-                            emit_event("global-cards-sync",
+                            emit_event(
+                                "global-cards-sync",
                                 iccid.clone().into(),
                                 reader_name.to_string_lossy().into(),
                                 "PRESENT".into(),
                                 client_id_cloned.clone(),
                                 Some(true),
-                                None
+                                None,
                             );
                         }
                     }
@@ -147,7 +159,9 @@ pub async fn ensure_connection(reader_name: &CStr, client_id: String, atr: Strin
                                     let mut payload_ack = String::new();
 
                                     // Check for the presence of the "finish" parameter
-                                    if let Some(finish_value) = json_payload.get("finish").and_then(|v| v.as_bool()) {
+                                    if let Some(finish_value) =
+                                        json_payload.get("finish").and_then(|v| v.as_bool())
+                                    {
                                         log::debug!(
                                             "{} Finish parameter: {}",
                                             log_header,
@@ -157,30 +171,33 @@ pub async fn ensure_connection(reader_name: &CStr, client_id: String, atr: Strin
                                         // Processing the "finish" parameter depending on its value
                                         if finish_value {
                                             // Send the global-cards-sync event to the frontend that card is connected
-                                            emit_event("global-cards-sync",
+                                            emit_event(
+                                                "global-cards-sync",
                                                 iccid.clone().into(),
                                                 reader_name.to_string_lossy().into(),
                                                 "PRESENT".into(),
                                                 client_id_cloned.clone(),
                                                 Some(true),
-                                                Some(false)
+                                                Some(false),
                                             );
 
                                             log::info!("Authentication process is finished");
-                                            
+
                                             // Reset the card to its original state
                                             managed_card.reconnect().await;
 
                                             payload_ack = process_rapdu_mqtt_hex("".to_string());
 
-                                            auth_process = false;   // Authorization process is finished
+                                            auth_process = false; // Authorization process is finished
 
-                                            // handle the case when finish == true
+                                        // handle the case when finish == true
                                         } else {
                                             // finish flag is false here
                                             // PROCESS AUTHORIZATION WITH APDU COMMUNICATION
                                             // The "hex" parameter contains the apdu instruction that needs to be transferred to the card
-                                            if let Some(hex_value) = json_payload.get("payload").and_then(|v| v.as_str()) {
+                                            if let Some(hex_value) =
+                                                json_payload.get("payload").and_then(|v| v.as_str())
+                                            {
                                                 log::debug!(
                                                     "{} TRACKER: Payload hex value: {}",
                                                     log_header,
@@ -191,7 +208,7 @@ pub async fn ensure_connection(reader_name: &CStr, client_id: String, atr: Strin
 
                                                 if hex_value.is_empty() {
                                                     // This case is needed to reset the card when authorization is not completed, otherwise the card will not respond to commands correctly.
-                                                    if auth_process { 
+                                                    if auth_process {
                                                         // Reset the card to its original state
                                                         managed_card.reconnect().await;
                                                     }
@@ -201,33 +218,37 @@ pub async fn ensure_connection(reader_name: &CStr, client_id: String, atr: Strin
                                                     log::info!("Authentication process is started");
 
                                                     // Send the global-cards-sync event to the frontend that card is connected
-                                                    emit_event("global-cards-sync",
+                                                    emit_event(
+                                                        "global-cards-sync",
                                                         iccid.clone().into(),
                                                         reader_name.to_string_lossy().into(),
                                                         "PRESENT".into(),
                                                         client_id_cloned.clone(),
                                                         Some(true),
-                                                        Some(false)
+                                                        Some(false),
                                                     );
-
                                                 } else {
                                                     // // Otherwise, the logic for exchanging messages with the card.
-                                                    rapdu_mqtt_hex = managed_card.send_apdu(&hex_value, &client_id_cloned).await;
+                                                    rapdu_mqtt_hex = managed_card
+                                                        .send_apdu(&hex_value, &client_id_cloned)
+                                                        .await;
 
                                                     // Send the global-cards-sync event to the frontend that card is connected
-                                                    emit_event("global-cards-sync",
+                                                    emit_event(
+                                                        "global-cards-sync",
                                                         iccid.clone().into(),
                                                         reader_name.to_string_lossy().into(),
                                                         "PRESENT".into(),
                                                         client_id_cloned.clone(),
                                                         Some(true),
-                                                        Some(true)
+                                                        Some(true),
                                                     );
 
-                                                    auth_process = true;    // Authorization process is in progress
+                                                    auth_process = true; // Authorization process is in progress
                                                 }
 
-                                                payload_ack = process_rapdu_mqtt_hex(rapdu_mqtt_hex);
+                                                payload_ack =
+                                                    process_rapdu_mqtt_hex(rapdu_mqtt_hex);
 
                                                 // log::info!("finish_value: {}", finish_value);
                                             } else {
@@ -280,19 +301,17 @@ pub async fn ensure_connection(reader_name: &CStr, client_id: String, atr: Strin
                             )
                         }
                         Event::Incoming(Incoming::PingResp(..)) => {
-                            log::debug!(
-                                "{} Ping response received from the server.",
-                                log_header
-                            );
-                            
+                            log::debug!("{} Ping response received from the server.", log_header);
+
                             // Send the global-cards-sync event to the frontend that card is connected
-                            emit_event("global-cards-sync",
+                            emit_event(
+                                "global-cards-sync",
                                 iccid.clone().into(),
                                 reader_name.to_string_lossy().into(),
                                 "PRESENT".into(),
                                 client_id_cloned.clone(),
                                 Some(true),
-                                Some(false)
+                                Some(false),
                             );
                         }
                         _ => {} // This handles any other events that you haven't explicitly matched above
@@ -300,13 +319,14 @@ pub async fn ensure_connection(reader_name: &CStr, client_id: String, atr: Strin
                 }
                 Err(e) => {
                     // Send the global-cards-sync event to the frontend that card is connected
-                    emit_event("global-cards-sync",
+                    emit_event(
+                        "global-cards-sync",
                         iccid.clone().into(),
                         reader_name.to_string_lossy().into(),
                         "PRESENT".into(),
                         client_id_cloned.clone(),
                         Some(false),
-                        None
+                        None,
                     );
 
                     is_online = false;
@@ -367,7 +387,10 @@ pub async fn remove_connections(client_ids: Vec<String>) {
 
     for client_id in client_ids {
         // Find the index of the card with the matching client_id
-        if let Some(index) = task_pool.iter().position(|card| card.client_id == client_id) {
+        if let Some(index) = task_pool
+            .iter()
+            .position(|card| card.client_id == client_id)
+        {
             let card = task_pool.remove(index);
             card.task_handle.abort();
 

@@ -10,9 +10,9 @@ use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 // ───── External Crates ─────
+use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
 use serde_yaml;
-use lazy_static::lazy_static;
 use tauri::Emitter;
 
 // ───── Local Modules ─────
@@ -23,13 +23,13 @@ use crate::mqtt::remove_connections;
 /// Represents the configuration settings for the application.
 #[derive(Serialize, Deserialize, Debug)]
 pub struct ConfigurationFile {
-    name: String,                           // The name of the application.
-    version: String,                        // The version of the application.
-    description: String,                    // A brief description of the application.
-    appearance: Option<AppearanceConfig>,   // Optional UI configuration settings.
-    ident: Option<String>,                  // Optional ident for the application.
-    server: Option<ServerConfig>,           // Optional server configuration settings.
-    cards: HashMap<String, CardConfig>,     // Hashmap of the cards with the CardConfig structure
+    name: String,                         // The name of the application.
+    version: String,                      // The version of the application.
+    description: String,                  // A brief description of the application.
+    appearance: Option<AppearanceConfig>, // Optional UI configuration settings.
+    ident: Option<String>,                // Optional ident for the application.
+    server: Option<ServerConfig>,         // Optional server configuration settings.
+    cards: HashMap<String, CardConfig>,   // Hashmap of the cards with the CardConfig structure
 }
 
 // Server Configuration structure, part of ConfigurationFile that contains data about the server.
@@ -48,9 +48,9 @@ pub enum DarkTheme {
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct CardConfig {
-    pub iccid: String,          // ICCID
-    pub expire: Option<u64>,    // Expire date
-    pub name: Option<String>,    // Custom card name (for ease of user identification)
+    pub iccid: String,        // ICCID
+    pub expire: Option<u64>,  // Expire date
+    pub name: Option<String>, // Custom card name (for ease of user identification)
 }
 // UI Configuration structure, part of ConfigurationFile that contains data about how UI looks like.
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -194,7 +194,7 @@ fn update_card_config(
             emit_card_config_event(
                 "global-card-config-updated",
                 card_number.to_string(),
-                Some(card_config.clone())
+                Some(card_config.clone()),
             );
         }
 
@@ -262,9 +262,7 @@ pub fn update_server_config(
 }
 
 #[tauri::command]
-pub async fn remove_card(
-    cardnumber: String,
-) -> Result<(), String> {
+pub async fn remove_card(cardnumber: String) -> Result<(), String> {
     let config_path = get_config_path().map_err(|e| {
         log::error!("Failed to get config path: {}", e);
         format!("Failed to get config path: {}", e)
@@ -303,12 +301,13 @@ pub async fn remove_card_from_config(
 
         emit_card_config_event("global-card-config-updated", card_number.to_string(), None);
 
-        #[cfg(target_os = "linux")] {
+        #[cfg(target_os = "linux")]
+        {
             // "Super hack" to reload card states and trigger an event to update readers.
 
+            use crate::smart_card::manual_sync_cards;
             use tokio::time::sleep;
             use tokio::time::Duration;
-            use crate::smart_card::manual_sync_cards;
 
             sleep(Duration::from_millis(100)).await;
             manual_sync_cards(card_number.to_string(), false).await;
@@ -375,7 +374,7 @@ pub enum CacheSection {
     Cards,
     Server,
     Ident,
-    Appearance
+    Appearance,
 }
 
 /// Retrieves a value from the cache by key.
@@ -530,7 +529,9 @@ pub fn load_config_to_cache(
 /// The ident value is in the format "TBA" followed by 13 digits.
 fn generate_ident() -> String {
     let start = SystemTime::now();
-    let since_the_epoch = start.duration_since(UNIX_EPOCH).expect("Time went backwards");
+    let since_the_epoch = start
+        .duration_since(UNIX_EPOCH)
+        .expect("Time went backwards");
     let micros = since_the_epoch.as_micros();
     format!("TBA{:013}", micros % 1_000_000_000_000u128)
 }
@@ -552,11 +553,10 @@ pub fn init_config() -> io::Result<()> {
             }
             Err(_) => {
                 log::warn!("Config format mismatch. Attempting migration...");
-                config = migrate_old_config(&contents)
-                    .unwrap_or_else(|| {
-                        log::error!("Migration failed. Resetting to default config.");
-                        generate_default_config()
-                    });
+                config = migrate_old_config(&contents).unwrap_or_else(|| {
+                    log::error!("Migration failed. Resetting to default config.");
+                    generate_default_config()
+                });
             }
         }
     } else {
@@ -564,8 +564,7 @@ pub fn init_config() -> io::Result<()> {
         config = generate_default_config();
     }
 
-    save_config(&config_path, &config)
-        .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+    save_config(&config_path, &config).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
 
     log::debug!("config: saved config");
 
@@ -580,8 +579,7 @@ pub fn init_config() -> io::Result<()> {
         );
     }
 
-    load_config_to_cache(&config)
-        .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+    load_config_to_cache(&config).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
 
     Ok(())
 }
@@ -590,7 +588,8 @@ fn migrate_old_config(contents: &str) -> Option<ConfigurationFile> {
     #[derive(Deserialize)]
     struct OldConfig {
         name: String,
-        #[allow(dead_code)] // to say the compiler does not warn about an unused field that is used in another file.
+        #[allow(dead_code)]
+        // to say the compiler does not warn about an unused field that is used in another file.
         version: String,
         description: String,
         appearance: Option<AppearanceConfig>,
@@ -602,12 +601,12 @@ fn migrate_old_config(contents: &str) -> Option<ConfigurationFile> {
     let old_config: OldConfig = serde_yaml::from_str(contents).ok()?;
 
     let mut new_cards = HashMap::new();
-    if let Some(old_cards ) = old_config.cards {
+    if let Some(old_cards) = old_config.cards {
         for (_, card_number) in old_cards {
             let card_config = CardConfig {
                 iccid: String::new(),
                 expire: None,
-                name: None
+                name: None,
             };
             new_cards.insert(card_number, card_config);
         }

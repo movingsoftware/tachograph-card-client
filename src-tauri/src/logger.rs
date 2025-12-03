@@ -5,9 +5,9 @@ use std::path::PathBuf;
 
 use fern;
 use log;
-use sys_info;
 use reqwest;
 use serde::Deserialize;
+use sys_info;
 use tauri::async_runtime;
 // use tauri::Emitter;
 
@@ -28,7 +28,7 @@ struct Release {
 ///
 /// * On macOS, the log file is created in the `~/Documents/tba` directory.
 /// * On Windows, the log file is created in the `%USERPROFILE%\Documents\tba` directory.
-/// 
+///
 
 pub fn setup_logging() {
     let mut log_path = PathBuf::new();
@@ -59,7 +59,8 @@ pub fn setup_logging() {
 
     log_path.push("log.txt");
 
-    match fern::log_file(&log_path) {   // Check if the log file can be created. Permission check.
+    match fern::log_file(&log_path) {
+        // Check if the log file can be created. Permission check.
         Ok(file) => file,
         Err(e) => {
             eprintln!("Failed to create log file: {}", e);
@@ -85,14 +86,18 @@ pub fn setup_logging() {
                 message
             ))
         })
-        .level(log::LevelFilter::Info)  // Change to Debug if needed
+        .level(log::LevelFilter::Info) // Change to Debug if needed
         .chain(fern::log_file(&log_path).unwrap())
         .apply();
 
     if let Err(e) = init_log_result {
-        log::warn!("Failed to initialize logging. No permission to write log file at: {:?}. Error: {}", log_path, e);
+        log::warn!(
+            "Failed to initialize logging. No permission to write log file at: {:?}. Error: {}",
+            log_path,
+            e
+        );
     }
-    
+
     // Log the application launch
     log::info!("-== Application is launched ==-");
 
@@ -112,12 +117,21 @@ fn log_system_info() {
     let os_release = sys_info::os_release().unwrap_or_else(|_| "Unknown".to_string());
     let hostname = sys_info::hostname().unwrap_or_else(|_| "Unknown".to_string());
     let cpu_num = sys_info::cpu_num().unwrap_or_else(|_| 0);
-    let cpu_speed = sys_info::cpu_speed().map_or_else(|_| "Unknown".to_string(), |speed| format!("{} MHz", speed));
-    let mem_info = sys_info::mem_info().map_or_else(|_| "Unknown".to_string(), |mem| format!("total {} KB, free {} KB", mem.total, mem.free));
+    let cpu_speed = sys_info::cpu_speed()
+        .map_or_else(|_| "Unknown".to_string(), |speed| format!("{} MHz", speed));
+    let mem_info = sys_info::mem_info().map_or_else(
+        |_| "Unknown".to_string(),
+        |mem| format!("total {} KB, free {} KB", mem.total, mem.free),
+    );
 
     log::info!(
         "OS Type: {}, OS Release: {}, Hostname: {}, Number of CPUs: {} ({}), Memory: {}",
-        os_type, os_release, hostname, cpu_num, cpu_speed, mem_info
+        os_type,
+        os_release,
+        hostname,
+        cpu_num,
+        cpu_speed,
+        mem_info
     );
 }
 
@@ -133,13 +147,13 @@ async fn check_latest_version() -> Result<(), reqwest::Error> {
     if response.status().is_success() {
         let release: Release = response.json().await?;
         // log::info!("Latest release info: {:?}", release);
-        
+
         let latest_version = release.tag_name;
         let current_version = env!("CARGO_PKG_VERSION");
 
         let latest_version_num = version_to_number(&latest_version);
         let current_version_num = version_to_number(current_version);
-        
+
         if current_version_num > latest_version_num {
             log::info!(
                 "Version (current: {}, latest: {})",
@@ -156,7 +170,11 @@ async fn check_latest_version() -> Result<(), reqwest::Error> {
 
             let payload = NotificationPayload {
                 notification_type: "version".to_string(),
-                message: format!("New version {} is available, use the link to download: {}", latest_version, url).into(),
+                message: format!(
+                    "New version {} is available, use the link to download: {}",
+                    latest_version, url
+                )
+                .into(),
             };
             emit_notification_event("global-notification", payload);
         } else {
@@ -167,7 +185,10 @@ async fn check_latest_version() -> Result<(), reqwest::Error> {
             );
         }
     } else {
-        log::warn!("Versioin. Failed to fetch the latest release info: {}", response.status());
+        log::warn!(
+            "Versioin. Failed to fetch the latest release info: {}",
+            response.status()
+        );
     }
 
     Ok(())

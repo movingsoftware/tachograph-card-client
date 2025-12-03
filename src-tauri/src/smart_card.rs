@@ -6,9 +6,9 @@ use std::mem;
 use std::sync::Arc;
 
 // ───── Crates ─────
+use lazy_static::lazy_static;
 use log::{debug, error, info, warn};
 use once_cell::sync::OnceCell;
-use lazy_static::lazy_static;
 use rumqttc::v5::AsyncClient;
 use tokio::time::Duration;
 
@@ -29,12 +29,13 @@ const MAX_BUFFER_SIZE: usize = 260; // Example buffer size for smart card commun
 /// Represents a card currently being processed (i.e., connected and active).
 #[derive(Debug)]
 pub struct ProcessingCard {
-    pub client_id: String,              // it is Card number. Uses as client_id for mqtt connection
-    pub reader_name: Option<String>,    // Name of the smart card reader (e.g., "Alcor Micro AU9540 00 00").
-    pub atr: Option<String>,            // ATR of the inserted card (hex-encoded).
-    #[allow(dead_code)] // to say the compiler does not warn about an unused field that is used in another file.
-    pub mqtt_client: AsyncClient,       // MQTT client instance.
-    pub task_handle: JoinHandle<()>,    // Async task handle managing communication for this card.
+    pub client_id: String, // it is Card number. Uses as client_id for mqtt connection
+    pub reader_name: Option<String>, // Name of the smart card reader (e.g., "Alcor Micro AU9540 00 00").
+    pub atr: Option<String>,         // ATR of the inserted card (hex-encoded).
+    #[allow(dead_code)]
+    // to say the compiler does not warn about an unused field that is used in another file.
+    pub mqtt_client: AsyncClient, // MQTT client instance.
+    pub task_handle: JoinHandle<()>, // Async task handle managing communication for this card.
 }
 
 // ───── Statics ─────
@@ -90,7 +91,8 @@ fn setup_reader_states(
 ) -> Result<(), Box<dyn Error>> {
     // Remove dead readers.
     fn is_dead(rs: &ReaderState) -> bool {
-        rs.event_state().intersects(PcscState::UNKNOWN | PcscState::IGNORE)
+        rs.event_state()
+            .intersects(PcscState::UNKNOWN | PcscState::IGNORE)
     }
 
     for rs in &*reader_states {
@@ -125,9 +127,7 @@ fn setup_reader_states(
     Ok(())
 }
 
-async fn process_reader_states(
-    reader_states: &mut [ReaderState],
-) -> Result<(), SmartCardError> {
+async fn process_reader_states(reader_states: &mut [ReaderState]) -> Result<(), SmartCardError> {
     for rs in reader_states {
         if rs.name() != PNP_NOTIFICATION() {
             if is_virtual_reader(rs.name()) {
@@ -167,26 +167,25 @@ async fn process_reader_states(
                 CardProcessingResult::Create => {
                     // The card may not be created initially
                     match ManagedCard::new(reader_name, protocol) {
-                        Ok(managed_card) => {
-                            match managed_card.get_iccid().await {
-                                Ok(received_iccid) => {
-                                    log::info!("ICCID: {}", received_iccid);
+                        Ok(managed_card) => match managed_card.get_iccid().await {
+                            Ok(received_iccid) => {
+                                log::info!("ICCID: {}", received_iccid);
 
-                                    iccid = received_iccid.clone();
-                                    card_number = get_from_cache(CacheSection::Cards, &iccid);
+                                iccid = received_iccid.clone();
+                                card_number = get_from_cache(CacheSection::Cards, &iccid);
 
-                                    ensure_connection(
-                                        rs.name(),
-                                        card_number.clone(),
-                                        atr.clone(),
-                                        managed_card,
-                                    ).await;
-                                }
-                                Err(e) => {
-                                    log::error!("Failed to get ICCID: {}", e);
-                                }
+                                ensure_connection(
+                                    rs.name(),
+                                    card_number.clone(),
+                                    atr.clone(),
+                                    managed_card,
+                                )
+                                .await;
                             }
-                        }
+                            Err(e) => {
+                                log::error!("Failed to get ICCID: {}", e);
+                            }
+                        },
                         Err(e) => {
                             log::error!(
                                 "Failed to create ManagedCard for reader {}: {}",
@@ -261,8 +260,7 @@ pub async fn should_register_new_card(reader_name: &str, atr: &str) -> CardProce
     // Case 1: Both reader_name and atr are provided and not found in the pool → register new card
     if !reader_name.is_empty() && !atr.is_empty() {
         let exists = pool.iter().any(|c| {
-            c.reader_name.as_deref() == Some(reader_name) &&
-            c.atr.as_deref() == Some(atr)
+            c.reader_name.as_deref() == Some(reader_name) && c.atr.as_deref() == Some(atr)
         });
 
         if !exists {
@@ -273,7 +271,10 @@ pub async fn should_register_new_card(reader_name: &str, atr: &str) -> CardProce
     log::debug!("Case 2");
     // Case 2: ATR is empty, but a card with the same reader name and filled ATR exists → remove it
     if atr.is_empty() {
-        log::debug!("ATR is empty. Checking for stale entries with reader_name = '{}'", reader_name);
+        log::debug!(
+            "ATR is empty. Checking for stale entries with reader_name = '{}'",
+            reader_name
+        );
 
         log::debug!("Case 2_1");
 
@@ -358,9 +359,7 @@ pub async fn sc_monitor() -> ! {
                 break;
             }
 
-            if let Err(e) =
-                process_reader_states(&mut reader_states).await
-            {
+            if let Err(e) = process_reader_states(&mut reader_states).await {
                 match e {
                     SmartCardError::UnknownReader => {
                         log::warn!("Detected UnknownReader. Sleeping 3s to avoid busy loop!");
@@ -408,9 +407,15 @@ pub fn parse_atr_and_get_protocol(atr: &str) -> Protocols {
     index += 1;
 
     // Skip TA1, TB1, TC1 depends on Y1
-    if y1 & 0x1 != 0 { index += 1; } // TA1
-    if y1 & 0x2 != 0 { index += 1; } // TB1
-    if y1 & 0x4 != 0 { index += 1; } // TC1
+    if y1 & 0x1 != 0 {
+        index += 1;
+    } // TA1
+    if y1 & 0x2 != 0 {
+        index += 1;
+    } // TB1
+    if y1 & 0x4 != 0 {
+        index += 1;
+    } // TC1
 
     // TD1
     let td1 = if y1 & 0x8 != 0 && index < atr_bytes.len() {
@@ -425,9 +430,15 @@ pub fn parse_atr_and_get_protocol(atr: &str) -> Protocols {
     let td2 = if let Some(td1) = td1 {
         let y2 = td1 >> 4;
         // Skip TA2, TB2, TC2
-        if y2 & 0x1 != 0 { index += 1; } // TA2
-        if y2 & 0x2 != 0 { index += 1; } // TB2
-        if y2 & 0x4 != 0 { index += 1; } // TC2
+        if y2 & 0x1 != 0 {
+            index += 1;
+        } // TA2
+        if y2 & 0x2 != 0 {
+            index += 1;
+        } // TB2
+        if y2 & 0x4 != 0 {
+            index += 1;
+        } // TC2
 
         if y2 & 0x8 != 0 && index < atr_bytes.len() {
             Some(atr_bytes[index])
@@ -466,10 +477,7 @@ pub fn parse_atr_and_get_protocol(atr: &str) -> Protocols {
 // This function is used to manually sync cards from anywhere in the program.
 // Manually sync cards. Clicking on the button in the frontend will trigger this function
 #[tauri::command]
-pub async fn manual_sync_cards(
-    readername: String,
-    restart: bool,
-) -> Result<(), String> {
+pub async fn manual_sync_cards(readername: String, restart: bool) -> Result<(), String> {
     log::debug!("Manual sync cards function is called. Restart: {}", restart);
 
     if restart {
@@ -528,7 +536,10 @@ pub struct ManagedCard {
 }
 
 impl ManagedCard {
-    pub fn new(reader_name: &CStr, protocol: Protocols) -> Result<Self, Box<dyn StdError + Send + Sync>> {
+    pub fn new(
+        reader_name: &CStr,
+        protocol: Protocols,
+    ) -> Result<Self, Box<dyn StdError + Send + Sync>> {
         debug!(
             "ManagedCard::new() called. Reader: '{}', Protocol: {:?}",
             reader_name.to_string_lossy(),
@@ -549,14 +560,17 @@ impl ManagedCard {
         })
     }
 
-    pub fn create_card(reader_name: &CStr, protocol: Protocols) -> Result<Card, Box<dyn StdError + Send + Sync>> {
-        let ctx = Context::establish(Scope::User)
-            .map_err(|err| {
-                log::error!("Failed to establish context: {}", err);
-                Box::<dyn StdError + Send + Sync>::from(err)
-            })?;
+    pub fn create_card(
+        reader_name: &CStr,
+        protocol: Protocols,
+    ) -> Result<Card, Box<dyn StdError + Send + Sync>> {
+        let ctx = Context::establish(Scope::User).map_err(|err| {
+            log::error!("Failed to establish context: {}", err);
+            Box::<dyn StdError + Send + Sync>::from(err)
+        })?;
 
-        let card = ctx.connect(reader_name, ShareMode::Shared, protocol)
+        let card = ctx
+            .connect(reader_name, ShareMode::Shared, protocol)
             .map_err(|err| {
                 log::error!("Failed to connect to card: {}", err);
                 Box::<dyn StdError + Send + Sync>::from(err)
@@ -652,7 +666,10 @@ impl ManagedCard {
     //     }
     // }
 
-    pub async fn apdu_transmit(&self, apdu_hex: &str) -> Result<String, Box<dyn StdError + Send + Sync>> {
+    pub async fn apdu_transmit(
+        &self,
+        apdu_hex: &str,
+    ) -> Result<String, Box<dyn StdError + Send + Sync>> {
         use crate::smart_card::MAX_BUFFER_SIZE;
 
         debug!(
@@ -675,9 +692,7 @@ impl ManagedCard {
         let card = Arc::clone(&self.inner);
         let apdu_cloned = apdu.clone();
 
-        debug!(
-            "Cloned card for blocking transmission. Sending to spawn_blocking..."
-        );
+        debug!("Cloned card for blocking transmission. Sending to spawn_blocking...");
 
         let response = tauri::async_runtime::spawn_blocking(move || {
             debug!("Entered spawn_blocking thread. Preparing buffer and locking card...");
@@ -710,11 +725,7 @@ impl ManagedCard {
         Ok(response)
     }
 
-    pub async fn send_apdu(
-        &self,
-        apdu_hex: &str,
-        client_id: &str,
-    ) -> String {
+    pub async fn send_apdu(&self, apdu_hex: &str, client_id: &str) -> String {
         debug!("{} Sending APDU command: {}", client_id, apdu_hex);
 
         // First attempt
@@ -726,8 +737,7 @@ impl ManagedCard {
             Err(err) => {
                 error!(
                     "{} Failed to send APDU: {}. Attempting to recreate card...",
-                    client_id,
-                    err
+                    client_id, err
                 );
             }
         }
@@ -736,8 +746,7 @@ impl ManagedCard {
         if let Err(e) = self.recreate().await {
             error!(
                 "{} Failed to recreate card after APDU failure: {}",
-                client_id,
-                e
+                client_id, e
             );
             return "6F00".to_string();
         }
@@ -747,16 +756,14 @@ impl ManagedCard {
             Ok(response) => {
                 debug!(
                     "{} APDU response (after recreate): {:?}",
-                    client_id,
-                    response
+                    client_id, response
                 );
                 response
             }
             Err(retry_err) => {
                 error!(
                     "{} Retry failed: could not send APDU after recreate: {}",
-                    client_id,
-                    retry_err
+                    client_id, retry_err
                 );
                 "6F00".to_string()
             }
@@ -784,7 +791,10 @@ impl ManagedCard {
         let select_result = self.apdu_transmit("00A4020C020002").await?;
 
         if !select_result.ends_with("9000") {
-            log::warn!("SELECT EF ICC returned unexpected status: {}", select_result);
+            log::warn!(
+                "SELECT EF ICC returned unexpected status: {}",
+                select_result
+            );
         }
 
         // READ BINARY (10 байт)
@@ -792,10 +802,13 @@ impl ManagedCard {
 
         let hex_data = read_response.strip_suffix("9000").unwrap_or(&read_response);
 
-        let bytes = hex::decode(hex_data)
-            .map_err(|e| format!("Failed to decode ICCID hex: {}", e))?;
+        let bytes =
+            hex::decode(hex_data).map_err(|e| format!("Failed to decode ICCID hex: {}", e))?;
 
-        let iccid = bytes.iter().map(|b| format!("{:02X}", b)).collect::<String>();
+        let iccid = bytes
+            .iter()
+            .map(|b| format!("{:02X}", b))
+            .collect::<String>();
 
         log::debug!("Final ICCID: {}", iccid);
 
@@ -804,5 +817,4 @@ impl ManagedCard {
 
         Ok(iccid)
     }
-
 }

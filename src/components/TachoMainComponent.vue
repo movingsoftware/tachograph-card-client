@@ -271,7 +271,7 @@ function linkMode(iccid: string) {
 async function addCard(number: string, data: SmartCard) {
   state.cards[number] = data
   await saveCardNumber(number, data)
-  await syncTrackmijnCards()
+  await transportklokService.createTrackmijnCard(number.toUpperCase(), data)
 }
 
 async function updateCard(number: string, data: SmartCard) {
