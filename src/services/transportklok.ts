@@ -565,30 +565,18 @@ export class TransportklokService {
   }
 
   private async fetchTrackmijnCards(): Promise<TrackmijnCard[]> {
-    if (this.trackmijnCardsRequest) {
-      return this.trackmijnCardsRequest
+    if (!this.trackmijnCompanyId) {
+      await this.createTrackmijnToken(true)
     }
 
-    this.trackmijnCardsRequest = (async () => {
-      if (!this.trackmijnCompanyId) {
-        await this.createTrackmijnToken(true)
-      }
-
-      if (!this.trackmijnCompanyId) {
-        return []
-      }
-
-      return this.trackmijnRequest<GetAllResponse<TrackmijnCard[]>>(
-        `/v1/companies/${this.trackmijnCompanyId}/tachograph-company-cards`,
-        { method: 'GET', headers: buildJsonHeaders() }
-      ).then((data) => data.data)
-    })()
-
-    try {
-      return await this.trackmijnCardsRequest
-    } finally {
-      this.trackmijnCardsRequest = null
+    if (!this.trackmijnCompanyId) {
+      return []
     }
+
+    return this.trackmijnRequest<GetAllResponse<TrackmijnCard[]>>(
+      `/v1/companies/${this.trackmijnCompanyId}/tachograph-company-cards`,
+      { method: 'GET', headers: buildJsonHeaders() }
+    ).then((data) => data.data)
   }
 
   public async createTrackmijnCard(cardNumber: string, cardData?: SmartCard, retry = true): Promise<void> {

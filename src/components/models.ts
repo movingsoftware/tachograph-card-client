@@ -1,8 +1,8 @@
 // Interfaces
 export interface SmartCard {
-  name?: string
-  iccid?: string
-  id?: string
+  name?: string | undefined;
+  iccid?: string | undefined;
+  id?: string | undefined;
 }
 
 export interface Reader {
