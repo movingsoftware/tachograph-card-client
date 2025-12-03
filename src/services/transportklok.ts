@@ -153,6 +153,7 @@ export class TransportklokService {
   private trackmijnClientIdentifier: string
   private trackmijnDeviceId: string | null
   private localCards: Record<string, SmartCard>
+  private trackmijnCardsRequest: Promise<TrackmijnCard[]> | null
   private trackmijnCardsSyncPromise: Promise<void> | null
 
   constructor() {
@@ -176,6 +177,7 @@ export class TransportklokService {
     this.trackmijnDeviceId = localStorage.getItem(TRACKMIJN_DEVICE_ID_KEY)
     this.cachedIdent = this.trackmijnClientIdentifier
     this.localCards = {}
+    this.trackmijnCardsRequest = null
     this.trackmijnCardsSyncPromise = null
   }
 
@@ -533,18 +535,30 @@ export class TransportklokService {
   }
 
   private async fetchTrackmijnCards(): Promise<TrackmijnCard[]> {
-    if (!this.trackmijnCompanyId) {
-      await this.createTrackmijnToken(true)
+    if (this.trackmijnCardsRequest) {
+      return this.trackmijnCardsRequest
     }
 
-    if (!this.trackmijnCompanyId) {
-      return []
-    }
+    this.trackmijnCardsRequest = (async () => {
+      if (!this.trackmijnCompanyId) {
+        await this.createTrackmijnToken(true)
+      }
 
-    return this.trackmijnRequest<GetAllResponse<TrackmijnCard[]>>(
-      `/v1/companies/${this.trackmijnCompanyId}/tachograph-company-cards`,
-      { method: 'GET', headers: buildJsonHeaders() }
-    ).then((data) => data.data);
+      if (!this.trackmijnCompanyId) {
+        return []
+      }
+
+      return this.trackmijnRequest<GetAllResponse<TrackmijnCard[]>>(
+        `/v1/companies/${this.trackmijnCompanyId}/tachograph-company-cards`,
+        { method: 'GET', headers: buildJsonHeaders() }
+      ).then((data) => data.data)
+    })()
+
+    try {
+      return await this.trackmijnCardsRequest
+    } finally {
+      this.trackmijnCardsRequest = null
+    }
   }
 
   public async createTrackmijnCard(cardNumber: string, cardData?: SmartCard, retry = true): Promise<void> {
@@ -588,17 +602,23 @@ export class TransportklokService {
       return
     }
 
-    const cardsOnTrackmijn = existingCards ?? (await this.fetchTrackmijnCards())
-    const existingNumbers = new Set(
-      cardsOnTrackmijn
-        .map((card) => (card.configuration.ident ? card.configuration.ident.toUpperCase() : null))
-        .filter(Boolean) as string[]
-    )
+    if (this.trackmijnCardsSyncPromise) {
+      return this.trackmijnCardsSyncPromise
+    }
 
-    for (const [cardNumber, cardData] of Object.entries(this.localCards)) {
-      const normalizedNumber = cardNumber.toUpperCase()
-      if (!existingNumbers.has(normalizedNumber)) {
-        await this.createTrackmijnCard(normalizedNumber, cardData)
+    this.trackmijnCardsSyncPromise = (async () => {
+      const cardsOnTrackmijn = existingCards ?? (await this.fetchTrackmijnCards())
+      const existingNumbers = new Set(
+        cardsOnTrackmijn
+          .map((card) => (card.configuration.ident ? card.configuration.ident.toUpperCase() : null))
+          .filter(Boolean) as string[]
+      )
+
+      for (const [cardNumber, cardData] of Object.entries(this.localCards)) {
+        const normalizedNumber = cardNumber.toUpperCase()
+        if (!existingNumbers.has(normalizedNumber)) {
+          await this.createTrackmijnCard(normalizedNumber, cardData)
+        }
       }
     })()
 
