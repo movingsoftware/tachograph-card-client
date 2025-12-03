@@ -622,21 +622,30 @@ export class TransportklokService {
       return this.createTachoBridgeClient()
     }
 
-    if (!response.ok && response.status !== 409) {
-      const data = await parseJson(response)
+    const data = await parseJson<{ device_id?: string }>(response)
+    if (response.status === 409) {
+      if (data?.device_id) {
+        this.trackmijnDeviceId = data.device_id
+        this.persistTokens()
+        return data.device_id
+      }
+
+      if (this.trackmijnDeviceId) {
+        return this.trackmijnDeviceId
+      }
+
+      throw new Error('Kan apparaat-ID van bestaande TrackMijn-tachobridgeclient niet bepalen')
+    }
+
+    if (!response.ok) {
       console.error('Unable to create TrackMijn tacho bridge client', data)
       throw new Error('Kan TrackMijn-tachobridgeclient niet aanmaken')
     }
 
-    const data = await parseJson<{ device_id?: string }>(response)
     if (data?.device_id) {
       this.trackmijnDeviceId = data.device_id
       this.persistTokens()
       return data.device_id
-    }
-
-    if (response.status === 409 && this.trackmijnDeviceId) {
-      return this.trackmijnDeviceId
     }
 
     throw new Error('Kan apparaat-ID van TrackMijn-tachobridgeclient niet bepalen')
