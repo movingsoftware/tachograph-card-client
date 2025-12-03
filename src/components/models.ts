@@ -2,6 +2,7 @@
 export interface SmartCard {
   name?: string
   iccid?: string
+  id?: string
 }
 
 export interface Reader {
