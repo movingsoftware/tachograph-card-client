@@ -132,8 +132,7 @@ export class TransportklokService {
   private flespiHost: string
   private cachedIdent = ''
   private cachedTheme: ServerTheme = 'Auto'
-  private cachedServerHost = ''
-  private hasAppliedEnvHost = false
+  private lastAppliedConfig: { host: string; ident: string; theme: ServerTheme } | null = null
 
   private deviceToken: string | null
   private sessionToken: string | null
@@ -161,30 +160,46 @@ export class TransportklokService {
     this.trackmijnCompanyId = localStorage.getItem(TRACKMIJN_COMPANY_KEY)
     this.trackmijnClientIdentifier = normalizeTrackmijnIdentifier(localStorage.getItem(TRACKMIJN_CLIENT_KEY))
     this.trackmijnDeviceId = localStorage.getItem(TRACKMIJN_DEVICE_ID_KEY)
+    this.cachedIdent = this.trackmijnClientIdentifier
   }
 
   setServerConfigFromBackend(host: string, ident: string, theme: string) {
-    this.cachedServerHost = host
-    this.cachedIdent = ident
+    if (host) {
+      this.flespiHost = host
+    }
+
+    if (ident) {
+      this.cachedIdent = ident
+    }
+
     this.cachedTheme = theme as ServerTheme || 'Auto'
   }
 
   async applyFlespiServerConfig() {
-    if (!this.flespiHost) return
-    if (this.cachedServerHost === this.flespiHost && this.hasAppliedEnvHost) {
+    const host = this.flespiHost
+    const ident = this.cachedIdent || this.trackmijnClientIdentifier
+    const theme = this.cachedTheme || 'Auto'
+
+    if (!host) return
+
+    if (
+      this.lastAppliedConfig &&
+      this.lastAppliedConfig.host === host &&
+      this.lastAppliedConfig.ident === ident &&
+      this.lastAppliedConfig.theme === theme
+    ) {
       return
     }
 
     try {
       await invoke('update_server', {
-        host: this.flespiHost,
-        ident: this.cachedIdent,
-        theme: this.cachedTheme,
+        host,
+        ident,
+        theme,
       })
       await invoke('manual_sync_cards', { readername: '', restart: true })
       await invoke('app_connection')
-      this.cachedServerHost = this.flespiHost
-      this.hasAppliedEnvHost = true
+      this.lastAppliedConfig = { host, ident, theme }
     } catch (error) {
       console.error('Unable to push Flespi server configuration', error)
     }
@@ -565,6 +580,7 @@ export class TransportklokService {
       if (this.trackmijnDeviceId) {
         const exists = await this.trackmijnClientExists(this.trackmijnDeviceId)
         if (exists) {
+          await this.updateBackendServerIdent()
           return
         }
         this.resetTrackmijnDeviceId()
@@ -574,6 +590,7 @@ export class TransportklokService {
       const exists = await this.trackmijnClientExists(deviceId)
 
       if (exists) {
+        await this.updateBackendServerIdent()
         return
       }
 
@@ -581,6 +598,11 @@ export class TransportklokService {
     }
 
     throw new Error('Kan TrackMijn-tachobridgeclient niet aanmaken of verifiëren')
+  }
+
+  private async updateBackendServerIdent() {
+    this.cachedIdent = this.trackmijnClientIdentifier
+    await this.applyFlespiServerConfig()
   }
 
   getSessionToken(): string | null {
