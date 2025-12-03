@@ -1,21 +1,30 @@
 <template>
   <div class="window-shell">
-    <custom-title-bar />
-
     <q-layout view="lHh Lpr lFf" class="window-shell__layout">
-      <q-header elevated :class="headerClass">
-        <q-toolbar class="toolbar">
-          <div class="title-text">TransportKlok tachograafbrug</div>
+      <q-header elevated :class="headerClass" data-tauri-drag-region>
+        <div class="app-header">
+          <div class="control-dots" aria-label="Window controls" data-tauri-drag-region="false">
+            <button class="control-dots__button control-dots__button--close" type="button" @click="handleClose" />
+            <button class="control-dots__button control-dots__button--minimize" type="button" @click="handleMinimize" />
+            <button
+              class="control-dots__button control-dots__button--maximize"
+              type="button"
+              @click="handleToggleMaximize"
+            />
+          </div>
+          <div class="title-text">TransportKlok tachograaf verbinder</div>
           <q-btn
+            class="connection-btn"
             :label="isConnected ? 'Verbreek verbinding' : 'Verbind applicatie'"
             :color="isConnected ? 'white' : 'primary'"
             :text-color="isConnected ? 'positive' : 'white'"
+            dense
             unelevated
             :loading="isCheckingLogin || isRequestingLogin"
             @click="toggleConnection"
-            class="connection-btn"
+            data-tauri-drag-region="false"
           />
-        </q-toolbar>
+        </div>
       </q-header>
 
       <q-page-container>
@@ -33,8 +42,12 @@ import { listen } from '@tauri-apps/api/event'
 import 'animate.css'
 import { transportklokService } from '../services/transportklok'
 import { useConnectionManager } from '../services/connectionManager'
-import CustomTitleBar from '../components/CustomTitleBar.vue'
 import { useTransportklokOutdatedState } from '../services/outdatedApp'
+import {
+  closeWindow,
+  minimizeWindow,
+  toggleMaximizeWindow,
+} from '../services/windowControls'
 
 const $q = useQuasar()
 const { isConnected, connect, disconnect, isCheckingLogin, isRequestingLogin } = useConnectionManager()
@@ -42,9 +55,10 @@ const { isTransportklokOutdated } = useTransportklokOutdatedState()
 const router = useRouter()
 const route = useRoute()
 
-const headerClass = computed(() =>
-  isConnected.value ? 'bg-positive text-white header-border' : 'bg-white text-primary header-border'
-)
+const headerClass = computed(() => [
+  isConnected.value ? 'bg-positive text-white' : 'bg-white text-primary',
+  'header-border',
+])
 
 const toggleConnection = async () => {
   if (isConnected.value) {
@@ -124,6 +138,18 @@ listen('global-notification', (event) => {
 }).catch((error) => {
   console.error('Error listening to global-notification:', error)
 })
+
+const handleMinimize = async () => {
+  await minimizeWindow()
+}
+
+const handleToggleMaximize = async () => {
+  await toggleMaximizeWindow()
+}
+
+const handleClose = async () => {
+  await closeWindow()
+}
 </script>
 
 <style scoped>
@@ -138,22 +164,77 @@ listen('global-notification', (event) => {
   min-height: 0;
 }
 
+.app-header {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  -webkit-app-region: drag;
+}
+
 .title-text {
   font-weight: 700;
   letter-spacing: 0.5px;
-}
-.toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 8px 16px;
+  text-align: center;
+  white-space: nowrap;
 }
 
 .connection-btn {
-  min-width: 180px;
+  min-width: 160px;
+  -webkit-app-region: no-drag;
 }
 
 .header-border {
   border-bottom: 1px solid #e5e7eb;
+}
+
+.control-dots {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  -webkit-app-region: no-drag;
+}
+
+.control-dots__button {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.08);
+  transition: transform 0.15s ease;
+  cursor: pointer;
+}
+
+.control-dots__button:hover {
+  transform: scale(1.05);
+}
+
+.control-dots__button:active {
+  transform: scale(0.95);
+}
+
+.control-dots__button--close {
+  background: #ff5f56;
+}
+
+.control-dots__button--minimize {
+  background: #ffbd2e;
+}
+
+.control-dots__button--maximize {
+  background: #27c93f;
+}
+
+@media (max-width: 600px) {
+  .app-header {
+    grid-template-columns: auto 1fr;
+    grid-template-rows: auto auto;
+    align-items: center;
+  }
+
+  .title-text {
+    grid-column: 1 / -1;
+  }
 }
 </style>
