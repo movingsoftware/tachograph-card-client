@@ -111,7 +111,7 @@ async function parseJson<T>(response: Response): Promise<T | undefined> {
 }
 
 function getAppVersion(): string {
-  return (import.meta as { env: Record<string, string> }).env.APP_VERSION || '0.0.0'
+  return (import.meta as { env: Record<string, string> }).env.APP_VERSION || '0.0.1'
 }
 
 function getAppKey(): string|null {
