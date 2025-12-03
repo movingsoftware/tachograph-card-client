@@ -1,9 +1,9 @@
 {
-  "name": "tacho-bridge-application",
-  "version": "0.7.0",
-  "description": "Tachograph authentication application",
-  "productName": "Tacho Bridge Application",
-  "author": "shev <shev@gurtam.com>",
+  "name": "tachograph-card-client",
+  "version": "0.0.1",
+  "description": "TransportKlok Tachograph Card Client",
+  "productName": "TransportKlok Tachograaf kaart verbinder",
+  "author": "Redmar Bakker <redmar@transportklok.nl>",
   "type": "module",
   "private": true,
   "scripts": {

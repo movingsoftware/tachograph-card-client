@@ -1,8 +1,8 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "tba",
-  "version": "0.7.0",
-  "identifier": "com.flespi.tba.dev",
+  "productName": "TransportKlok Tachograafkaart verbinder",
+  "version": "0.0.1",
+  "identifier": "com.transportklok.tcc",
   "build": {
     "frontendDist": "../dist/spa",
     "devUrl": "http://192.168.178.191:9000",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "tba",
+        "title": "TransportKlok Tachograafkaart verbinder",
         "width": 620,
         "height": 400,
         "decorations": true,
