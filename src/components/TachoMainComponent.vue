@@ -1,5 +1,5 @@
 <template>
-  <div style="width: 600px; max-width: 100%">
+  <div style="width: 100%">
     <div class="rounded-borders" style="border: 1px solid #666">
       <div v-if="state.readers.length === 0" class="q-pa-md text-grey text-h6">
         Geen aangesloten smartcardlezers
@@ -98,8 +98,6 @@
   padding-right: 16px;
 }
 .card-number-dialog .q-card {
-  width: 300px; /* Window width */
-  max-width: 90vw; /* Maximum window width */
   height: 160px; /* Window height */
   max-height: 90vh; /* Maximum window height */
 }

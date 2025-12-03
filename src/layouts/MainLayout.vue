@@ -1,21 +1,21 @@
 <template>
   <div class="window-shell">
-    <custom-title-bar />
-
     <q-layout view="lHh Lpr lFf" class="window-shell__layout">
-      <q-header elevated :class="headerClass">
-        <q-toolbar class="toolbar">
-          <div class="title-text">TransportKlok tachograafbrug</div>
+      <q-header elevated :class="headerClass" data-tauri-drag-region>
+        <div class="app-header">
+          <div class="title-text">TransportKlok tachograaf verbinder</div>
           <q-btn
+            class="connection-btn"
             :label="isConnected ? 'Verbreek verbinding' : 'Verbind applicatie'"
             :color="isConnected ? 'white' : 'primary'"
             :text-color="isConnected ? 'positive' : 'white'"
+            dense
             unelevated
             :loading="isCheckingLogin || isRequestingLogin"
             @click="toggleConnection"
-            class="connection-btn"
+            data-tauri-drag-region="false"
           />
-        </q-toolbar>
+        </div>
       </q-header>
 
       <q-page-container>
@@ -33,8 +33,12 @@ import { listen } from '@tauri-apps/api/event'
 import 'animate.css'
 import { transportklokService } from '../services/transportklok'
 import { useConnectionManager } from '../services/connectionManager'
-import CustomTitleBar from '../components/CustomTitleBar.vue'
 import { useTransportklokOutdatedState } from '../services/outdatedApp'
+// import {
+//   closeWindow,
+//   minimizeWindow,
+//   toggleMaximizeWindow,
+// } from '../services/windowControls'
 
 const $q = useQuasar()
 const { isConnected, connect, disconnect, isCheckingLogin, isRequestingLogin } = useConnectionManager()
@@ -42,9 +46,10 @@ const { isTransportklokOutdated } = useTransportklokOutdatedState()
 const router = useRouter()
 const route = useRoute()
 
-const headerClass = computed(() =>
-  isConnected.value ? 'bg-positive text-white header-border' : 'bg-white text-primary header-border'
-)
+const headerClass = computed(() => [
+  isConnected.value ? 'bg-positive text-white' : 'bg-white text-primary',
+  'header-border',
+])
 
 const toggleConnection = async () => {
   if (isConnected.value) {
@@ -124,6 +129,18 @@ listen('global-notification', (event) => {
 }).catch((error) => {
   console.error('Error listening to global-notification:', error)
 })
+
+// const handleMinimize = async () => {
+//   await minimizeWindow()
+// }
+//
+// const handleToggleMaximize = async () => {
+//   await toggleMaximizeWindow()
+// }
+//
+// const handleClose = async () => {
+//   await closeWindow()
+// }
 </script>
 
 <style scoped>
@@ -138,22 +155,33 @@ listen('global-notification', (event) => {
   min-height: 0;
 }
 
+.app-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 16px;
+}
+
 .title-text {
   font-weight: 700;
   letter-spacing: 0.5px;
-}
-.toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 8px 16px;
+  text-align: center;
+  white-space: nowrap;
 }
 
 .connection-btn {
-  min-width: 180px;
+  min-width: 160px;
 }
 
-.header-border {
-  border-bottom: 1px solid #e5e7eb;
+@media (max-width: 600px) {
+  .app-header {
+    grid-template-columns: auto 1fr;
+    grid-template-rows: auto auto;
+    align-items: center;
+  }
+
+  .title-text {
+    grid-column: 1 / -1;
+  }
 }
 </style>
