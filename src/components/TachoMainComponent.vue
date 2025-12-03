@@ -109,6 +109,7 @@ import type { SmartCard, Reader } from './models'
 import { ref, reactive, defineComponent } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { listen, emit } from '@tauri-apps/api/event'
+import { transportklokService } from '../services/transportklok'
 
 // Blinking status for the card icon during authentication.
 const isBlinking = ref(true) // controls the blinking status of the icon
@@ -120,6 +121,14 @@ const state = reactive({
   readers: [] as Reader[],
   cards: {} as Record<string, SmartCard>,
 })
+
+const syncTrackmijnCards = async () => {
+  try {
+    await transportklokService.syncLocalCardsWithTrackmijn(state.cards)
+  } catch (error) {
+    console.error('Kon TrackMijn-kaarten niet synchroniseren', error)
+  }
+}
 
 ////////////////////////// Listening for the event from the backend //////////////////////////
 // This is an event listener that will listen for the backend to send an event
@@ -262,11 +271,13 @@ function linkMode(iccid: string) {
 async function addCard(number: string, data: SmartCard) {
   state.cards[number] = data
   await saveCardNumber(number, data)
+  await syncTrackmijnCards()
 }
 
 async function updateCard(number: string, data: SmartCard) {
   state.cards[number] = data
   await saveCardNumber(number, data)
+  await syncTrackmijnCards()
 }
 
 // remove card func from the config
@@ -291,6 +302,7 @@ listen('global-card-config-updated', (event) => {
     } else {
       delete state.cards[payload.card_number]
     }
+    void syncTrackmijnCards()
   }
 }).catch((error) => {
   console.error('Error listening to global-card-config-updated:', error)
