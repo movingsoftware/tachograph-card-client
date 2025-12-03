@@ -102,7 +102,7 @@ const refreshSession = async () => {
         position: 'bottom',
       })
       statusMessage.value = error.message
-      transportklokService.clearAuth()
+      await transportklokService.clearAuth()
     } else {
       statusMessage.value = (error as Error).message || 'Meld je aan bij TransportKlok.'
     }
@@ -202,7 +202,7 @@ const disconnect = async () => {
       position: 'bottom',
     })
   } finally {
-    transportklokService.clearAuth()
+    await transportklokService.clearAuth()
     authState.value = 'needs-login'
     statusMessage.value = 'Niet verbonden met TransportKlok.'
     persistConnectionState()

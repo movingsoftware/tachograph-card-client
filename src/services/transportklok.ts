@@ -238,7 +238,31 @@ export class TransportklokService {
     }
   }
 
-  clearAuth() {
+  private async destroyTransportklokDevice() {
+    if (!this.deviceToken) {
+      return
+    }
+
+    try {
+      const response = await fetch(`${this.transportklokBase}/auth/device`, {
+        method: 'DELETE',
+        headers: {
+          Authorization: `Bearer ${this.deviceToken}`,
+        },
+      })
+
+      if (!response.ok && response.status !== 404) {
+        const data = await parseJson(response)
+        console.warn('Kon TransportKlok-apparaat niet verwijderen', data)
+      }
+    } catch (error) {
+      console.error('Kon TransportKlok-apparaat niet verwijderen', error)
+    }
+  }
+
+  async clearAuth() {
+    await this.destroyTransportklokDevice()
+
     this.deviceToken = null
     this.sessionToken = null
     this.trackmijnToken = null
@@ -301,7 +325,7 @@ export class TransportklokService {
     await this.registerDevice(token)
     await this.createSessionFromDevice()
     const user = await this.fetchCurrentUser()
-    this.persistAfterUserValidation(user)
+    await this.persistAfterUserValidation(user)
     return user
   }
 
@@ -400,9 +424,9 @@ export class TransportklokService {
     return user
   }
 
-  private persistAfterUserValidation(user: TransportklokUser) {
+  private async persistAfterUserValidation(user: TransportklokUser) {
     if (user.current_role === 'employee') {
-      this.clearAuth()
+      await this.clearAuth()
       throw new RoleNotAllowedError('Medewerkersaccounts zijn niet toegestaan voor tachograafauthenticatie.')
     }
     this.persistTokens()
@@ -414,7 +438,7 @@ export class TransportklokService {
     }
 
     const user = await this.fetchCurrentUser()
-    this.persistAfterUserValidation(user)
+    await this.persistAfterUserValidation(user)
     return user
   }
 
