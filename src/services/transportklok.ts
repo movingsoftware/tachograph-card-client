@@ -153,6 +153,7 @@ export class TransportklokService {
   private trackmijnClientIdentifier: string
   private trackmijnDeviceId: string | null
   private localCards: Record<string, SmartCard>
+  private trackmijnCardsSyncPromise: Promise<void> | null
 
   constructor() {
     this.transportklokBase = normalizeBaseUrl(
@@ -175,6 +176,7 @@ export class TransportklokService {
     this.trackmijnDeviceId = localStorage.getItem(TRACKMIJN_DEVICE_ID_KEY)
     this.cachedIdent = this.trackmijnClientIdentifier
     this.localCards = {}
+    this.trackmijnCardsSyncPromise = null
   }
 
   setServerConfigFromBackend(host: string, ident: string, theme: string) {
@@ -598,6 +600,12 @@ export class TransportklokService {
       if (!existingNumbers.has(normalizedNumber)) {
         await this.createTrackmijnCard(normalizedNumber, cardData)
       }
+    })()
+
+    try {
+      await this.trackmijnCardsSyncPromise
+    } finally {
+      this.trackmijnCardsSyncPromise = null
     }
   }
 
