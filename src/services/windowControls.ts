@@ -29,9 +29,11 @@ export async function listenToWindowResize(
   callback: (isMaximized: boolean) => void
 ): Promise<UnlistenFn> {
   const unlisten = await getCurrentWindow().onResized(() => {
-    getCurrentWindow().isMaximized().then((isMaximized) => {
-      callback(isMaximized)
-    })
+    void getCurrentWindow()
+      .isMaximized()
+      .then((isMaximized) => {
+        callback(isMaximized)
+      })
   })
 
   return unlisten
