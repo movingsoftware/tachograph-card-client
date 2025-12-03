@@ -600,7 +600,7 @@ export class TransportklokService {
       if (!existingNumbers.has(normalizedNumber)) {
         await this.createTrackmijnCard(normalizedNumber, cardData)
       }
-    })()
+    }
 
     try {
       await this.trackmijnCardsSyncPromise
