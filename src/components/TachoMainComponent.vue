@@ -146,7 +146,7 @@ const persistCardLocally = async (cardNumber: string, content: SmartCard, syncRe
     const reader = state.readers[readerIndex]
     try {
       await invoke('manual_sync_cards', {
-        readername: reader.name,
+        readername: reader?.name,
         restart: false,
       })
     } catch (error) {

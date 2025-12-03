@@ -620,30 +620,18 @@ export class TransportklokService {
       return
     }
 
-    if (this.trackmijnCardsSyncPromise) {
-      return this.trackmijnCardsSyncPromise
-    }
+    const cardsOnTrackmijn = existingCards ?? (await this.fetchTrackmijnCards())
+    const existingNumbers = new Set(
+      cardsOnTrackmijn
+        .map((card) => (card.configuration.ident ? card.configuration.ident.toUpperCase() : null))
+        .filter(Boolean) as string[]
+    )
 
-    this.trackmijnCardsSyncPromise = (async () => {
-      const cardsOnTrackmijn = existingCards ?? (await this.fetchTrackmijnCards())
-      const existingNumbers = new Set(
-        cardsOnTrackmijn
-          .map((card) => (card.configuration.ident ? card.configuration.ident.toUpperCase() : null))
-          .filter(Boolean) as string[]
-      )
-
-      for (const [cardNumber, cardData] of Object.entries(this.localCards)) {
-        const normalizedNumber = cardNumber.toUpperCase()
-        if (!existingNumbers.has(normalizedNumber)) {
-          await this.createTrackmijnCard(normalizedNumber, cardData)
-        }
+    for (const [cardNumber, cardData] of Object.entries(this.localCards)) {
+      const normalizedNumber = cardNumber.toUpperCase()
+      if (!existingNumbers.has(normalizedNumber)) {
+        await this.createTrackmijnCard(normalizedNumber, cardData)
       }
-    })()
-
-    try {
-      await this.trackmijnCardsSyncPromise
-    } finally {
-      this.trackmijnCardsSyncPromise = null
     }
   }
 
@@ -657,6 +645,7 @@ export class TransportklokService {
     }
 
     let deviceId = cardId
+
     if (!deviceId) {
       const trackmijnCards = await this.fetchTrackmijnCards()
       const matchingCard = trackmijnCards.find(
