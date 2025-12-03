@@ -169,7 +169,17 @@ const startLogin = async () => {
     const response = await transportklokService.requestDeviceAuthentication()
     pendingToken.value = response.token
     persistConnectionState()
-    await openUrl(response.url)
+    let redirectUrl = response.url
+
+    try {
+      const loginUrl = new URL(response.url)
+      loginUrl.searchParams.set('redirect', 'transportklok_tachograph_connector://open')
+      redirectUrl = loginUrl.toString()
+    } catch (error) {
+      console.warn('Kon redirect parameter niet toevoegen aan de inlog-URL', error)
+    }
+
+    await openUrl(redirectUrl)
     statusMessage.value = 'Voltooi de aanmelding in je browser; wij controleren dit automatisch.'
     beginPolling()
   } catch (error) {
@@ -225,6 +235,17 @@ const pausePolling = () => {
   clearPoll()
 }
 
+const checkStatusOnFocus = async () => {
+  resumePollingIfPending()
+
+  if (pendingToken.value) {
+    await pollForSession()
+    return
+  }
+
+  await refreshSession()
+}
+
 export function useConnectionManager() {
   return {
     authState,
@@ -239,5 +260,6 @@ export function useConnectionManager() {
     refreshSession,
     resumePollingIfPending,
     pausePolling,
+    checkStatusOnFocus,
   }
 }

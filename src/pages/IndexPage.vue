@@ -5,7 +5,7 @@
         <TachoMainComponent />
       </div>
       <div v-else class="disconnected-area column items-center justify-center">
-        <q-spinner color="primary" size="32px" v-if="isCheckingLogin || authState === 'loading'" />
+        <q-spinner color="primary" size="32px" v-if="isAuthBusy" />
         <div class="text-h6 text-grey-8 q-mt-md">Applicatie niet verbonden</div>
         <div class="text-body2 text-grey-7 q-mt-sm text-center">
           {{ statusMessage }}
@@ -16,22 +16,51 @@
 </template>
 
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted } from 'vue'
+import { computed, onBeforeUnmount, onMounted } from 'vue'
+import type { UnlistenFn } from '@tauri-apps/api/event'
+import { listen } from '@tauri-apps/api/event'
 import TachoMainComponent from '../components/TachoMainComponent.vue'
 import { useConnectionManager } from '../services/connectionManager'
 
-const { authState, statusMessage, isConnected, isCheckingLogin, initializeConnection, resumePollingIfPending, pausePolling } =
-  useConnectionManager()
+const {
+  authState,
+  statusMessage,
+  pendingToken,
+  isConnected,
+  isCheckingLogin,
+  isRequestingLogin,
+  initializeConnection,
+  checkStatusOnFocus,
+  pausePolling,
+} = useConnectionManager()
+
+const isAuthBusy = computed(
+  () => isCheckingLogin.value || isRequestingLogin.value || authState.value === 'loading' || Boolean(pendingToken.value)
+)
+
+let unlistenTauriFocus: UnlistenFn | null = null
+
+const handleFocus = () => {
+  void checkStatusOnFocus()
+}
 
 onMounted(async () => {
-  window.addEventListener('focus', resumePollingIfPending)
+  window.addEventListener('focus', handleFocus)
   window.addEventListener('blur', pausePolling)
+  try {
+    unlistenTauriFocus = await listen('tauri://focus', handleFocus)
+  } catch (error) {
+    console.warn('Kon Tauri focus-event niet registreren', error)
+  }
   await initializeConnection()
 })
 
 onBeforeUnmount(() => {
-  window.removeEventListener('focus', resumePollingIfPending)
+  window.removeEventListener('focus', handleFocus)
   window.removeEventListener('blur', pausePolling)
+  if (unlistenTauriFocus) {
+    void unlistenTauriFocus()
+  }
   pausePolling()
 })
 </script>
