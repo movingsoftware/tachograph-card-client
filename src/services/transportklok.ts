@@ -153,6 +153,7 @@ export class TransportklokService {
   private trackmijnClientIdentifier: string
   private trackmijnDeviceId: string | null
   private localCards: Record<string, SmartCard>
+  private trackmijnCardsSyncPromise: Promise<void> | null
 
   constructor() {
     this.transportklokBase = normalizeBaseUrl(
@@ -175,6 +176,7 @@ export class TransportklokService {
     this.trackmijnDeviceId = localStorage.getItem(TRACKMIJN_DEVICE_ID_KEY)
     this.cachedIdent = this.trackmijnClientIdentifier
     this.localCards = {}
+    this.trackmijnCardsSyncPromise = null
   }
 
   setServerConfigFromBackend(host: string, ident: string, theme: string) {
@@ -558,16 +560,30 @@ export class TransportklokService {
       return
     }
 
-    const existingCards = await this.fetchTrackmijnCards()
-    console.log(existingCards)
-    const existingNumbers = new Set(
-      existingCards.map((card) => (card.configuration.ident ? card.configuration.ident.toUpperCase() : null)).filter(Boolean) as string[]
-    )
+    if (this.trackmijnCardsSyncPromise) {
+      return this.trackmijnCardsSyncPromise
+    }
 
-    for (const [cardNumber, cardData] of Object.entries(this.localCards)) {
-      if (!existingNumbers.has(cardNumber.toUpperCase())) {
-        await this.createTrackmijnCard(cardNumber.toUpperCase(), cardData)
+    this.trackmijnCardsSyncPromise = (async () => {
+      const existingCards = await this.fetchTrackmijnCards()
+      console.log(existingCards)
+      const existingNumbers = new Set(
+        existingCards
+          .map((card) => (card.configuration.ident ? card.configuration.ident.toUpperCase() : null))
+          .filter(Boolean) as string[]
+      )
+
+      for (const [cardNumber, cardData] of Object.entries(this.localCards ?? {})) {
+        if (!existingNumbers.has(cardNumber.toUpperCase())) {
+          await this.createTrackmijnCard(cardNumber.toUpperCase(), cardData)
+        }
       }
+    })()
+
+    try {
+      await this.trackmijnCardsSyncPromise
+    } finally {
+      this.trackmijnCardsSyncPromise = null
     }
   }
 
