@@ -106,9 +106,9 @@
 <script setup lang="ts">
 import SmartCardList from './SmartCardList.vue'
 import type { SmartCard, Reader } from './models'
-import { onMounted, ref, reactive, defineComponent } from 'vue'
+import { onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
-import { listen, emit } from '@tauri-apps/api/event'
+import { listen, emit, type UnlistenFn } from '@tauri-apps/api/event'
 import { transportklokService } from '../services/transportklok'
 
 // Blinking status for the card icon during authentication.
@@ -122,18 +122,43 @@ const state = reactive({
   cards: {} as Record<string, SmartCard>,
 })
 
-const importTrackmijnCards = async (cards: Record<string, SmartCard>) => {
-  const entries = Object.entries(cards)
-  for (const [cardNumber, content] of entries) {
+let focusUnlisten: UnlistenFn | null = null
+let syncPromise: Promise<void> | null = null
+
+const normalizeCardNumber = (cardNumber: string) => cardNumber.trim().toUpperCase()
+
+const persistCardLocally = async (cardNumber: string, content: SmartCard, syncReader = true) => {
+  const normalizedNumber = normalizeCardNumber(cardNumber)
+  const sanitizedContent = { ...content, iccid: content.iccid ?? '' }
+
+  await invoke('update_card', {
+    cardnumber: normalizedNumber,
+    content: sanitizedContent,
+  })
+
+  state.cards[normalizedNumber] = sanitizedContent
+
+  if (!syncReader) return
+
+  const readerIndex = state.readers.findIndex((reader) => reader.iccid === sanitizedContent.iccid)
+
+  if (readerIndex > -1) {
+    const reader = state.readers[readerIndex]
     try {
-      await invoke('update_card', {
-        cardnumber: cardNumber,
-        content: {
-          ...content,
-          iccid: content.iccid ?? '',
-        },
+      await invoke('manual_sync_cards', {
+        readername: reader.name,
+        restart: false,
       })
-      state.cards[cardNumber] = { ...content, iccid: content.iccid ?? '' }
+    } catch (error) {
+      console.error('Kon kaart niet synchroniseren met lezer', error)
+    }
+  }
+}
+
+const importTrackmijnCards = async (cards: Record<string, SmartCard>) => {
+  for (const [cardNumber, content] of Object.entries(cards)) {
+    try {
+      await persistCardLocally(cardNumber, content, false)
     } catch (error) {
       console.error('Failed to import TrackMijn card', error)
     }
@@ -141,22 +166,32 @@ const importTrackmijnCards = async (cards: Record<string, SmartCard>) => {
 }
 
 const syncTrackmijnCards = async () => {
-  try {
-    const { missingLocalCards, updatedLocalCards } = await transportklokService.syncLocalCardsWithTrackmijn(
-      state.cards
-    )
-    await importTrackmijnCards(updatedLocalCards)
-    await importTrackmijnCards(missingLocalCards)
-  } catch (error) {
-    console.error('Kon TrackMijn-kaarten niet synchroniseren', error)
+  if (syncPromise) {
+    return syncPromise
   }
+
+  syncPromise = (async () => {
+    try {
+      const { missingLocalCards, updatedLocalCards } = await transportklokService.syncLocalCardsWithTrackmijn({
+        ...state.cards,
+      })
+
+      await importTrackmijnCards(updatedLocalCards)
+      await importTrackmijnCards(missingLocalCards)
+    } catch (error) {
+      console.error('Kon TrackMijn-kaarten niet synchroniseren', error)
+    } finally {
+      syncPromise = null
+    }
+  })()
+
+  return syncPromise
 }
 
 ////////////////////////// Listening for the event from the backend //////////////////////////
 // This is an event listener that will listen for the backend to send an event
 listen('global-cards-sync', (event) => {
-  console.log('event payload: ', event.payload) // log event payload from backend to the console
-  // structure has fields from the Rust back-end with the 'snake_case' naming convention
+  console.log('event payload: ', event.payload)
   const payload = event.payload as {
     iccid: string
     reader_name: string
@@ -167,73 +202,31 @@ listen('global-cards-sync', (event) => {
   }
 
   const name = payload.reader_name
-  const card_number = payload.card_number
-  // Split the status by the pipe character and get the second element
+  const cardNumber = normalizeCardNumber(payload.card_number)
   const splitted = (payload.card_state?.match(/\((.*)\)/i) ?? [])[1]?.split('|') ?? []
   const status = splitted[1]?.trim() ?? splitted[0] ?? ''
 
   const iccid = payload.iccid
-  // Find the index of the reader with the same name
   const index = state.readers.findIndex((reader) => reader.name === name)
-  if (index !== -1) {
-    // If reader with the same name is found, update the status and card data
-    const existingReader = state.readers[index]
-    if (!existingReader) return // на всякий случай
+  const updatedReader: Reader = {
+    name,
+    status,
+    iccid,
+    card_number: cardNumber,
+    online: payload.online,
+    authentication: payload.authentication,
+  }
 
-    state.readers[index] = {
-      name,
-      status,
-      iccid,
-      card_number,
-      online: payload.online,
-      authentication: payload.authentication,
-    }
+  if (index !== -1) {
+    state.readers[index] = updatedReader
   } else {
-    // If reader with the same name is not found, add the reader to the list
-    state.readers.push({
-      name,
-      status,
-      iccid,
-      card_number,
-      online: payload.online,
-      authentication: payload.authentication,
-    })
+    state.readers.push(updatedReader)
   }
 }).catch((error) => {
   console.error('Error listening to global-cards-sync:', error)
 })
 
 ///////////////////////////// Dialog window for entering the Card Number value /////////////////////////////
-
-const saveCardNumber = async (cardNumber: string, content: SmartCard) => {
-  // Find the index of the reader with the same iccid
-  const readerIndex = state.readers.findIndex((reader) => reader.iccid === content.iccid)
-
-  // Save the card number to the currentReader object
-  console.log(`Card Number: ${cardNumber}, Card iccid: ${content.iccid}`)
-
-  // update the configuration with the new card number in the dynamic cache
-  const update_result = await invoke('update_card', {
-    cardnumber: cardNumber,
-    content: content,
-  })
-
-  // Update the card number in the state if configuration update was successful
-  if (update_result && readerIndex > -1) {
-    const reader = state.readers[readerIndex]
-    if (reader) {
-      // Run update only if reader definitely exists
-      await invoke('manual_sync_cards', {
-        readername: reader.name,
-        restart: false,
-      })
-
-      console.log('Card number updated successfully')
-    } else {
-      console.error(`Reader at index ${readerIndex} does not exist`)
-    }
-  }
-}
 
 // Function to change the color of the icon depending on the card status
 const cardConnectedStatus = (reader: Reader) => {
@@ -291,24 +284,38 @@ function linkMode(iccid: string) {
   }
 }
 async function addCard(number: string, data: SmartCard) {
-  state.cards[number] = data
-  await saveCardNumber(number, data)
-  await transportklokService.createTrackmijnCard(number.toUpperCase(), data)
+  const normalizedNumber = normalizeCardNumber(number)
+  const sanitizedData = { ...data, iccid: data.iccid ?? '' }
+
+  try {
+    await persistCardLocally(normalizedNumber, sanitizedData)
+    await transportklokService.createTrackmijnCard(normalizedNumber, sanitizedData)
+    await syncTrackmijnCards()
+  } catch (error) {
+    console.error('Kon kaart niet toevoegen', error)
+  }
 }
 
 async function updateCard(number: string, data: SmartCard) {
-  state.cards[number] = data
-  await saveCardNumber(number, data)
-  await syncTrackmijnCards()
+  const normalizedNumber = normalizeCardNumber(number)
+  const sanitizedData = { ...data, iccid: data.iccid ?? '' }
+
+  try {
+    await persistCardLocally(normalizedNumber, sanitizedData)
+    await syncTrackmijnCards()
+  } catch (error) {
+    console.error('Kon kaart niet bijwerken', error)
+  }
 }
 
 // remove card func from the config
 const removeCard = async (cardNumber: string) => {
   try {
-    await transportklokService.deleteTrackmijnCard(cardNumber, state.cards[cardNumber]?.id)
-    await invoke('remove_card', { cardnumber: cardNumber })
-    delete state.cards[cardNumber]
-    console.log('Card removed:', cardNumber)
+    const normalizedNumber = normalizeCardNumber(cardNumber)
+    await transportklokService.deleteTrackmijnCard(normalizedNumber, state.cards[normalizedNumber]?.id)
+    await invoke('remove_card', { cardnumber: normalizedNumber })
+    delete state.cards[normalizedNumber]
+    console.log('Card removed:', normalizedNumber)
   } catch (error) {
     console.error('Failed to remove card:', error)
   }
@@ -322,9 +329,11 @@ listen('global-card-config-updated', (event) => {
   }
   if (payload.card_number) {
     if (payload.content) {
-      state.cards[payload.card_number] = { ...payload.content }
+      const normalizedNumber = normalizeCardNumber(payload.card_number)
+      state.cards[normalizedNumber] = { ...(payload.content as SmartCard) }
     } else {
-      delete state.cards[payload.card_number]
+      const normalizedNumber = normalizeCardNumber(payload.card_number)
+      delete state.cards[normalizedNumber]
     }
     void syncTrackmijnCards()
   }
@@ -338,15 +347,24 @@ emit('frontend-loaded', { message: 'Hello from frontend!' }).catch((error) => {
   console.error('Error emitting frontend-loaded event:', error)
 })
 
-onMounted(() => {
+const handleFocus = () => {
+  void syncTrackmijnCards()
+}
+
+onMounted(async () => {
+  window.addEventListener('focus', handleFocus)
+  try {
+    focusUnlisten = await listen('tauri://focus', handleFocus)
+  } catch (error) {
+    console.warn('Kon Tauri focus-event niet registreren', error)
+  }
   void syncTrackmijnCards()
 })
 
-defineComponent({
-  setup() {
-    return {
-      saveCardNumber,
-    }
-  },
+onBeforeUnmount(() => {
+  window.removeEventListener('focus', handleFocus)
+  if (focusUnlisten) {
+    void focusUnlisten()
+  }
 })
 </script>
