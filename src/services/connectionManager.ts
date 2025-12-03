@@ -225,15 +225,29 @@ const pausePolling = () => {
   clearPoll()
 }
 
-const checkStatusOnFocus = async () => {
-  resumePollingIfPending()
+let focusCheckPromise: Promise<void> | null = null
 
-  if (pendingToken.value) {
-    await pollForSession()
-    return
+const checkStatusOnFocus = async () => {
+  if (focusCheckPromise) {
+    return focusCheckPromise
   }
 
-  await refreshSession()
+  focusCheckPromise = (async () => {
+    try {
+      resumePollingIfPending()
+
+      if (pendingToken.value) {
+        await pollForSession()
+        return
+      }
+
+      await refreshSession()
+    } finally {
+      focusCheckPromise = null
+    }
+  })()
+
+  return focusCheckPromise
 }
 
 export function useConnectionManager() {
