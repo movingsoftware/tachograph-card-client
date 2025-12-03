@@ -652,7 +652,7 @@ export class TransportklokService {
           await this.createTrackmijnCard(normalizedNumber, cardData)
         }
       }
-    }
+    })()
 
     try {
       await this.trackmijnCardsSyncPromise
