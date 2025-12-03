@@ -106,7 +106,7 @@
 <script setup lang="ts">
 import SmartCardList from './SmartCardList.vue'
 import type { SmartCard, Reader } from './models'
-import { ref, reactive, defineComponent } from 'vue'
+import { onMounted, ref, reactive, defineComponent } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { listen, emit } from '@tauri-apps/api/event'
 import { transportklokService } from '../services/transportklok'
@@ -122,9 +122,28 @@ const state = reactive({
   cards: {} as Record<string, SmartCard>,
 })
 
+const importTrackmijnCards = async (cards: Record<string, SmartCard>) => {
+  const entries = Object.entries(cards)
+  for (const [cardNumber, content] of entries) {
+    try {
+      await invoke('update_card', {
+        cardnumber: cardNumber,
+        content: {
+          ...content,
+          iccid: content.iccid ?? '',
+        },
+      })
+      state.cards[cardNumber] = { ...content, iccid: content.iccid ?? '' }
+    } catch (error) {
+      console.error('Failed to import TrackMijn card', error)
+    }
+  }
+}
+
 const syncTrackmijnCards = async () => {
   try {
-    await transportklokService.syncLocalCardsWithTrackmijn(state.cards)
+    const remoteCards = await transportklokService.syncLocalCardsWithTrackmijn(state.cards)
+    await importTrackmijnCards(remoteCards)
   } catch (error) {
     console.error('Kon TrackMijn-kaarten niet synchroniseren', error)
   }
@@ -283,7 +302,9 @@ async function updateCard(number: string, data: SmartCard) {
 // remove card func from the config
 const removeCard = async (cardNumber: string) => {
   try {
+    await transportklokService.deleteTrackmijnCard(cardNumber)
     await invoke('remove_card', { cardnumber: cardNumber })
+    delete state.cards[cardNumber]
     console.log('Card removed:', cardNumber)
   } catch (error) {
     console.error('Failed to remove card:', error)
@@ -312,6 +333,10 @@ listen('global-card-config-updated', (event) => {
 // To correctly display states in the application.
 emit('frontend-loaded', { message: 'Hello from frontend!' }).catch((error) => {
   console.error('Error emitting frontend-loaded event:', error)
+})
+
+onMounted(() => {
+  void syncTrackmijnCards()
 })
 
 defineComponent({
