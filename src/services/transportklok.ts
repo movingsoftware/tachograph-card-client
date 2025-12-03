@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core'
+import type { SmartCard } from '../components/models'
 
 export type TransportklokUser = {
   id?: string
@@ -25,6 +26,10 @@ type SessionResponse = {
 type TrackmijnTokenResponse = {
   token: string
   company_id: string
+}
+
+type TrackmijnCard = {
+  card_number?: string
 }
 
 export class RoleNotAllowedError extends Error {
@@ -140,6 +145,7 @@ export class TransportklokService {
   private trackmijnCompanyId: string | null
   private trackmijnClientIdentifier: string
   private trackmijnDeviceId: string | null
+  private localCards: Record<string, SmartCard>
 
   constructor() {
     this.transportklokBase = normalizeBaseUrl(
@@ -161,6 +167,7 @@ export class TransportklokService {
     this.trackmijnClientIdentifier = normalizeTrackmijnIdentifier(localStorage.getItem(TRACKMIJN_CLIENT_KEY))
     this.trackmijnDeviceId = localStorage.getItem(TRACKMIJN_DEVICE_ID_KEY)
     this.cachedIdent = this.trackmijnClientIdentifier
+    this.localCards = {}
   }
 
   setServerConfigFromBackend(host: string, ident: string, theme: string) {
@@ -460,6 +467,78 @@ export class TransportklokService {
     localStorage.removeItem(TRACKMIJN_DEVICE_ID_KEY)
   }
 
+  private updateLocalCards(localCards: Record<string, SmartCard>) {
+    this.localCards = { ...localCards }
+  }
+
+  private async fetchTrackmijnCards(): Promise<TrackmijnCard[]> {
+    if (!this.trackmijnCompanyId) {
+      await this.createTrackmijnToken(true)
+    }
+
+    if (!this.trackmijnCompanyId) {
+      return []
+    }
+
+    return this.trackmijnRequest<TrackmijnCard[]>(
+      `/v1/companies/${this.trackmijnCompanyId}/tachograph-company-cards`,
+      { method: 'GET', headers: buildJsonHeaders() }
+    )
+  }
+
+  private async createTrackmijnCard(cardNumber: string, cardData?: SmartCard, retry = true): Promise<void> {
+    if (!this.trackmijnCompanyId) {
+      await this.createTrackmijnToken(true)
+    }
+
+    if (!this.trackmijnCompanyId) {
+      throw new Error('Kan TrackMijn-bedrijfs-ID niet bepalen')
+    }
+
+    const path = `/v1/companies/${this.trackmijnCompanyId}/tachograph-company-cards`
+    const response = await fetch(`${this.trackmijnBase}${path}`, {
+      method: 'POST',
+      headers: buildJsonHeaders({ Authorization: `Bearer ${this.trackmijnToken ?? ''}` }),
+      body: JSON.stringify({
+        card_number: cardNumber,
+        name: cardData?.name,
+        iccid: cardData?.iccid,
+      }),
+    })
+
+    if (response.status === 401 && retry) {
+      await this.createTrackmijnToken(true)
+      return this.createTrackmijnCard(cardNumber, cardData, false)
+    }
+
+    if (response.status === 409) {
+      return
+    }
+
+    if (!response.ok) {
+      const data = await parseJson(response)
+      console.error('Unable to create TrackMijn tacho card', data)
+      throw new Error('Kan TrackMijn-kaart niet aanmaken')
+    }
+  }
+
+  private async ensureTrackmijnCardsExist() {
+    if (!this.localCards || Object.keys(this.localCards).length === 0) {
+      return
+    }
+
+    const existingCards = await this.fetchTrackmijnCards()
+    const existingNumbers = new Set(
+      existingCards.map((card) => (card.card_number ? card.card_number.toUpperCase() : null)).filter(Boolean) as string[]
+    )
+
+    for (const [cardNumber, cardData] of Object.entries(this.localCards)) {
+      if (!existingNumbers.has(cardNumber.toUpperCase())) {
+        await this.createTrackmijnCard(cardNumber.toUpperCase(), cardData)
+      }
+    }
+  }
+
   private async trackmijnClientExists(deviceId: string, retry = true): Promise<boolean> {
     if (!this.trackmijnCompanyId) {
       return false
@@ -580,6 +659,7 @@ export class TransportklokService {
       if (this.trackmijnDeviceId) {
         const exists = await this.trackmijnClientExists(this.trackmijnDeviceId)
         if (exists) {
+          await this.ensureTrackmijnCardsExist()
           await this.updateBackendServerIdent()
           return
         }
@@ -590,6 +670,7 @@ export class TransportklokService {
       const exists = await this.trackmijnClientExists(deviceId)
 
       if (exists) {
+        await this.ensureTrackmijnCardsExist()
         await this.updateBackendServerIdent()
         return
       }
@@ -616,6 +697,11 @@ export class TransportklokService {
       clientIdentifier: this.trackmijnClientIdentifier,
       deviceId: this.trackmijnDeviceId,
     }
+  }
+
+  async syncLocalCardsWithTrackmijn(localCards: Record<string, SmartCard>) {
+    this.updateLocalCards(localCards)
+    await this.ensureTrackmijnCardsExist()
   }
 
   getTransportklokBase() {
