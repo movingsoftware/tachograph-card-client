@@ -40,12 +40,6 @@
       "signingIdentity": "Developer ID Application: KoeriersKlok (9UHZ3723YU)",
       "providerShortName": "9UHZ3723YU",
       "entitlements": "entitlements.plist"
-    },
-    "protocols": [
-      {
-        "name": "transportklok_tachograph_connector",
-        "protocol": "transportklok_tachograph_connector"
-      }
-    ]
+    }
   }
 }
