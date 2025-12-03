@@ -33,7 +33,9 @@ type TrackmijnTokenResponse = {
 }
 
 type TrackmijnCard = {
+  id?: string
   name: string
+  device_id?: string
   configuration: {
     ident: string
   }
@@ -507,10 +509,13 @@ export class TransportklokService {
   private mapTrackmijnCardsToLocal(cards: TrackmijnCard[]): Record<string, SmartCard> {
     return cards.reduce<Record<string, SmartCard>>((acc, card) => {
       const ident = card.configuration?.ident?.toUpperCase()
+      const deviceId = card.device_id || card.id
+
       if (ident) {
         acc[ident] = {
           name: card.name,
           iccid: '',
+          id: deviceId,
         }
       }
 
@@ -530,6 +535,33 @@ export class TransportklokService {
       }
       return missing
     }, {})
+  }
+
+  private mergeTrackmijnDetailsIntoLocal(trackmijnCards: TrackmijnCard[]): Record<string, SmartCard> {
+    const trackmijnCardsMap = this.mapTrackmijnCardsToLocal(trackmijnCards)
+    const updatedCards: Record<string, SmartCard> = {}
+
+    for (const [cardNumber, cardData] of Object.entries(this.localCards)) {
+      const normalizedNumber = cardNumber.toUpperCase()
+      const trackmijnCard = trackmijnCardsMap[normalizedNumber]
+      if (!trackmijnCard) {
+        continue
+      }
+
+      const mergedCard: SmartCard = {
+        ...cardData,
+        id: trackmijnCard.id || cardData.id,
+        name: cardData.name || trackmijnCard.name,
+      }
+
+      if (mergedCard.id !== cardData.id || mergedCard.name !== cardData.name) {
+        updatedCards[normalizedNumber] = mergedCard
+      }
+
+      this.localCards[normalizedNumber] = mergedCard
+    }
+
+    return updatedCards
   }
 
   private async fetchTrackmijnCards(): Promise<TrackmijnCard[]> {
@@ -595,10 +627,12 @@ export class TransportklokService {
         .filter(Boolean) as string[]
     )
 
-    for (const [cardNumber, cardData] of Object.entries(this.localCards)) {
-      const normalizedNumber = cardNumber.toUpperCase()
-      if (!existingNumbers.has(normalizedNumber)) {
-        await this.createTrackmijnCard(normalizedNumber, cardData)
+    this.trackmijnCardsSyncPromise = (async () => {
+      for (const [cardNumber, cardData] of Object.entries(this.localCards)) {
+        const normalizedNumber = cardNumber.toUpperCase()
+        if (!existingNumbers.has(normalizedNumber)) {
+          await this.createTrackmijnCard(normalizedNumber, cardData)
+        }
       }
     })()
 
@@ -609,7 +643,7 @@ export class TransportklokService {
     }
   }
 
-  async deleteTrackmijnCard(cardNumber: string, retry = true): Promise<void> {
+  async deleteTrackmijnCard(cardNumber: string, cardId?: string, retry = true): Promise<void> {
     if (!this.trackmijnCompanyId) {
       await this.createTrackmijnToken(true)
     }
@@ -618,7 +652,20 @@ export class TransportklokService {
       return
     }
 
-    const path = `/v1/companies/${this.trackmijnCompanyId}/tachograph-company-cards/${cardNumber.toUpperCase()}`
+    let deviceId = cardId
+    if (!deviceId) {
+      const trackmijnCards = await this.fetchTrackmijnCards()
+      const matchingCard = trackmijnCards.find(
+        (card) => card.configuration?.ident?.toUpperCase() === cardNumber.toUpperCase()
+      )
+      deviceId = matchingCard?.device_id || matchingCard?.id
+    }
+
+    if (!deviceId) {
+      throw new Error('Kan apparaat-ID van TrackMijn-kaart niet bepalen')
+    }
+
+    const path = `/v1/companies/${this.trackmijnCompanyId}/tachograph-company-cards/${deviceId}`
     const response = await fetch(`${this.trackmijnBase}${path}`, {
       method: 'DELETE',
       headers: buildJsonHeaders({ Authorization: `Bearer ${this.trackmijnToken ?? ''}` }),
@@ -626,7 +673,7 @@ export class TransportklokService {
 
     if (response.status === 401 && retry) {
       await this.createTrackmijnToken(true)
-      return this.deleteTrackmijnCard(cardNumber, false)
+      return this.deleteTrackmijnCard(cardNumber, deviceId, false)
     }
 
     if (response.status === 404) {
@@ -809,12 +856,15 @@ export class TransportklokService {
     }
   }
 
-  async syncLocalCardsWithTrackmijn(localCards: Record<string, SmartCard>): Promise<Record<string, SmartCard>> {
+  async syncLocalCardsWithTrackmijn(
+    localCards: Record<string, SmartCard>
+  ): Promise<{ missingLocalCards: Record<string, SmartCard>; updatedLocalCards: Record<string, SmartCard> }> {
     this.updateLocalCards(localCards)
     const trackmijnCards = await this.fetchTrackmijnCards()
+    const updatedLocalCards = this.mergeTrackmijnDetailsIntoLocal(trackmijnCards)
     const missingLocalCards = this.findTrackmijnOnlyCards(trackmijnCards)
     await this.ensureTrackmijnCardsExist(trackmijnCards)
-    return missingLocalCards
+    return { missingLocalCards, updatedLocalCards }
   }
 
   getTransportklokBase() {

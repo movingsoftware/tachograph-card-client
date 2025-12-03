@@ -142,8 +142,11 @@ const importTrackmijnCards = async (cards: Record<string, SmartCard>) => {
 
 const syncTrackmijnCards = async () => {
   try {
-    const remoteCards = await transportklokService.syncLocalCardsWithTrackmijn(state.cards)
-    await importTrackmijnCards(remoteCards)
+    const { missingLocalCards, updatedLocalCards } = await transportklokService.syncLocalCardsWithTrackmijn(
+      state.cards
+    )
+    await importTrackmijnCards(updatedLocalCards)
+    await importTrackmijnCards(missingLocalCards)
   } catch (error) {
     console.error('Kon TrackMijn-kaarten niet synchroniseren', error)
   }
@@ -302,7 +305,7 @@ async function updateCard(number: string, data: SmartCard) {
 // remove card func from the config
 const removeCard = async (cardNumber: string) => {
   try {
-    await transportklokService.deleteTrackmijnCard(cardNumber)
+    await transportklokService.deleteTrackmijnCard(cardNumber, state.cards[cardNumber]?.id)
     await invoke('remove_card', { cardnumber: cardNumber })
     delete state.cards[cardNumber]
     console.log('Card removed:', cardNumber)
