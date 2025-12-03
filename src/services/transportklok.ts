@@ -33,9 +33,8 @@ type TrackmijnTokenResponse = {
 }
 
 type TrackmijnCard = {
-  id?: string
+  id: string
   name: string
-  device_id?: string
   configuration: {
     ident: string
   }
@@ -511,13 +510,12 @@ export class TransportklokService {
   private mapTrackmijnCardsToLocal(cards: TrackmijnCard[]): Record<string, SmartCard> {
     return cards.reduce<Record<string, SmartCard>>((acc, card) => {
       const ident = card.configuration?.ident?.toUpperCase()
-      const deviceId = card.device_id || card.id
 
       if (ident) {
         acc[ident] = {
           name: card.name,
           iccid: '',
-          id: deviceId,
+          id: card.id,
         }
       }
 
@@ -676,7 +674,7 @@ export class TransportklokService {
       const matchingCard = trackmijnCards.find(
         (card) => card.configuration?.ident?.toUpperCase() === cardNumber.toUpperCase()
       )
-      deviceId = matchingCard?.device_id || matchingCard?.id
+      deviceId = matchingCard?.id
     }
 
     if (!deviceId) {
@@ -788,12 +786,12 @@ export class TransportklokService {
       return this.createTachoBridgeClient()
     }
 
-    const data = await parseJson<{ device_id?: string }>(response)
+    const data = await parseJson<{ id?: string }>(response)
     if (response.status === 409) {
-      if (data?.device_id) {
-        this.trackmijnDeviceId = data.device_id
+      if (data?.id) {
+        this.trackmijnDeviceId = data.id
         this.persistTokens()
-        return data.device_id
+        return data.id
       }
 
       if (this.trackmijnDeviceId) {
@@ -808,10 +806,10 @@ export class TransportklokService {
       throw new Error('Kan TrackMijn-tachobridgeclient niet aanmaken')
     }
 
-    if (data?.device_id) {
-      this.trackmijnDeviceId = data.device_id
+    if (data?.id) {
+      this.trackmijnDeviceId = data.id
       this.persistTokens()
-      return data.device_id
+      return data.id
     }
 
     throw new Error('Kan apparaat-ID van TrackMijn-tachobridgeclient niet bepalen')
