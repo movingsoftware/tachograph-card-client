@@ -8,16 +8,6 @@
   "permissions": [
     "core:default",
     {
-      "identifier": "core:invoke",
-      "commands": [
-        "app_connection",
-        "manual_sync_cards",
-        "remove_card",
-        "update_card",
-        "update_server"
-      ]
-    },
-    {
       "identifier": "opener:allow-open-url",
       "allow": [
         {
@@ -27,6 +17,7 @@
           "url": "http://127.0.0.1:8000/*"
         }
       ]
-    }
+    },
+    "opener:default"
   ]
 }

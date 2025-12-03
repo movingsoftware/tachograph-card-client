@@ -176,7 +176,7 @@ export class TransportklokService {
   }
 
   async applyFlespiServerConfig() {
-    const host = this.flespiHost
+    const host = this.flespiHost || 'ch1330201.flespi.gw:29466'
     const ident = this.cachedIdent || this.trackmijnClientIdentifier
     const theme = this.cachedTheme || 'Auto'
 
