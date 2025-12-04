@@ -35,9 +35,8 @@ type TrackmijnTokenResponse = {
 type TrackmijnCard = {
   id: string
   name: string
-  configuration: {
-    ident: string
-  }
+  number: string
+  flespi_device_id: string
 }
 
 export class RoleNotAllowedError extends Error {
@@ -509,13 +508,13 @@ export class TransportklokService {
 
   private mapTrackmijnCardsToLocal(cards: TrackmijnCard[]): Record<string, SmartCard> {
     return cards.reduce<Record<string, SmartCard>>((acc, card) => {
-      const ident = card.configuration?.ident?.toUpperCase()
+      const ident = card.number.toUpperCase()
 
       if (ident) {
         acc[ident] = {
           name: card.name,
           iccid: '',
-          id: card.id,
+          id: card.flespi_device_id,
         }
       }
 
@@ -593,7 +592,7 @@ export class TransportklokService {
       method: 'POST',
       headers: buildJsonHeaders({ Authorization: `Bearer ${this.trackmijnToken ?? ''}` }),
       body: JSON.stringify({
-        card_number: cardNumber,
+        number: cardNumber,
         name: cardData?.name,
         iccid: cardData?.iccid,
       }),
@@ -623,7 +622,7 @@ export class TransportklokService {
     const cardsOnTrackmijn = existingCards ?? (await this.fetchTrackmijnCards())
     const existingNumbers = new Set(
       cardsOnTrackmijn
-        .map((card) => (card.configuration.ident ? card.configuration.ident.toUpperCase() : null))
+        .map((card) => (card.number ? card.number.toUpperCase() : null))
         .filter(Boolean) as string[]
     )
 
@@ -649,7 +648,7 @@ export class TransportklokService {
     if (!deviceId) {
       const trackmijnCards = await this.fetchTrackmijnCards()
       const matchingCard = trackmijnCards.find(
-        (card) => card.configuration?.ident?.toUpperCase() === cardNumber.toUpperCase()
+        (card) => card.number?.toUpperCase() === cardNumber.toUpperCase()
       )
       deviceId = matchingCard?.id
     }
@@ -755,7 +754,7 @@ export class TransportklokService {
     const response = await fetch(`${this.trackmijnBase}${path}`, {
       method: 'POST',
       headers: buildJsonHeaders({ Authorization: `Bearer ${this.trackmijnToken ?? ''}` }),
-      body: JSON.stringify({ client_identifier: this.trackmijnClientIdentifier }),
+      body: JSON.stringify({ identifier: this.trackmijnClientIdentifier }),
     })
 
     if (response.status === 401) {
