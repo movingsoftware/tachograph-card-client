@@ -53,6 +53,12 @@ export class TransportklokOutdatedError extends Error {
   }
 }
 
+export class TransportklokRequestError extends Error {
+  constructor(message: string, public status: number) {
+    super(message)
+  }
+}
+
 type ServerTheme = 'Auto' | 'Dark' | 'Light'
 
 const DEVICE_TOKEN_KEY = 'transportklok_device_token'
@@ -410,7 +416,7 @@ export class TransportklokService {
     if (!response.ok) {
       const data = await parseJson(response)
       console.error('TransportKlok request failed', data)
-      throw new Error('TransportKlok-verzoek mislukt')
+      throw new TransportklokRequestError('TransportKlok-verzoek mislukt', response.status)
     }
 
     const data = await parseJson<T>(response)
@@ -421,9 +427,11 @@ export class TransportklokService {
     return data
   }
 
-  async fetchCurrentUser(): Promise<TransportklokUser> {
+  async fetchCurrentUser(retrySession = true): Promise<TransportklokUser> {
     const user = await this.transportklokRequest<TransportklokUser>(
-      '/rest/me?relations[]=currentOrganization.name&relations[]=current_role'
+      '/rest/me?relations[]=currentOrganization.name&relations[]=current_role',
+      {},
+      retrySession
     )
     return user
   }
@@ -442,6 +450,16 @@ export class TransportklokService {
     }
 
     const user = await this.fetchCurrentUser()
+    await this.persistAfterUserValidation(user)
+    return user
+  }
+
+  async verifyOnlineStatus(): Promise<TransportklokUser> {
+    if (!this.sessionToken) {
+      throw new TransportklokRequestError('Niet geauthenticeerd bij TransportKlok', 401)
+    }
+
+    const user = await this.fetchCurrentUser(false)
     await this.persistAfterUserValidation(user)
     return user
   }
@@ -503,7 +521,13 @@ export class TransportklokService {
   }
 
   private updateLocalCards(localCards: Record<string, SmartCard>) {
-    this.localCards = { ...localCards }
+    this.localCards = Object.entries(localCards).reduce<Record<string, SmartCard>>(
+      (acc, [cardNumber, cardData]) => {
+        acc[cardNumber.toUpperCase()] = cardData
+        return acc
+      },
+      {}
+    )
   }
 
   private mapTrackmijnCardsToLocal(cards: TrackmijnCard[]): Record<string, SmartCard> {
@@ -576,6 +600,61 @@ export class TransportklokService {
       `/v1/companies/${this.trackmijnCompanyId}/tachograph-company-cards`,
       { method: 'GET', headers: buildJsonHeaders() }
     ).then((data) => data.data)
+  }
+
+  private async updateTrackmijnCard(cardId: string, cardData: SmartCard, retry = true): Promise<void> {
+    if (!this.trackmijnCompanyId) {
+      await this.createTrackmijnToken(true)
+    }
+
+    if (!this.trackmijnCompanyId) {
+      throw new Error('Kan TrackMijn-bedrijfs-ID niet bepalen')
+    }
+
+    const path = `/v1/companies/${this.trackmijnCompanyId}/tachograph-company-cards/${cardId}`
+    const response = await fetch(`${this.trackmijnBase}${path}`, {
+      method: 'PUT',
+      headers: buildJsonHeaders({ Authorization: `Bearer ${this.trackmijnToken ?? ''}` }),
+      body: JSON.stringify({
+        name: cardData.name,
+        iccid: cardData.iccid,
+      }),
+    })
+
+    if (response.status === 401 && retry) {
+      await this.createTrackmijnToken(true)
+      return this.updateTrackmijnCard(cardId, cardData, false)
+    }
+
+    if (response.status === 404) {
+      return
+    }
+
+    if (!response.ok) {
+      const data = await parseJson(response)
+      console.error('Unable to update TrackMijn tacho card', data)
+      throw new Error('Kan TrackMijn-kaart niet bijwerken')
+    }
+  }
+
+  private async updateTrackmijnCardsFromLocal(trackmijnCards: TrackmijnCard[]) {
+    for (const card of trackmijnCards) {
+      const ident = card.configuration?.ident?.toUpperCase()
+      if (!ident) {
+        continue
+      }
+
+      const localCard = this.localCards[ident]
+      if (!localCard?.name) {
+        continue
+      }
+
+      if (localCard.name === card.name) {
+        continue
+      }
+
+      await this.updateTrackmijnCard(card.id, localCard)
+    }
   }
 
   public async createTrackmijnCard(cardNumber: string, cardData?: SmartCard, retry = true): Promise<void> {
@@ -850,13 +929,32 @@ export class TransportklokService {
 
   async syncLocalCardsWithTrackmijn(
     localCards: Record<string, SmartCard>
-  ): Promise<{ missingLocalCards: Record<string, SmartCard>; updatedLocalCards: Record<string, SmartCard> }> {
+  ): Promise<{
+    missingLocalCards: Record<string, SmartCard>
+    updatedLocalCards: Record<string, SmartCard>
+    removedLocalCards: string[]
+  }> {
     this.updateLocalCards(localCards)
     const trackmijnCards = await this.fetchTrackmijnCards()
+    const trackmijnCardsMap = this.mapTrackmijnCardsToLocal(trackmijnCards)
+
+    const removedLocalCards: string[] = []
+    for (const localNumber of Object.keys(this.localCards)) {
+      const normalizedNumber = localNumber.toUpperCase()
+      if (trackmijnCardsMap[normalizedNumber]) {
+        continue
+      }
+
+      await invoke('remove_card', { cardnumber: normalizedNumber })
+      delete this.localCards[normalizedNumber]
+      removedLocalCards.push(normalizedNumber)
+    }
+
     const updatedLocalCards = this.mergeTrackmijnDetailsIntoLocal(trackmijnCards)
     const missingLocalCards = this.findTrackmijnOnlyCards(trackmijnCards)
-    await this.ensureTrackmijnCardsExist(trackmijnCards)
-    return { missingLocalCards, updatedLocalCards }
+    await this.updateTrackmijnCardsFromLocal(trackmijnCards)
+
+    return { missingLocalCards, updatedLocalCards, removedLocalCards }
   }
 
   getTransportklokBase() {

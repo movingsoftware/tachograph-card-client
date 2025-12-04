@@ -172,12 +172,17 @@ const syncTrackmijnCards = async () => {
 
   syncPromise = (async () => {
     try {
-      const { missingLocalCards, updatedLocalCards } = await transportklokService.syncLocalCardsWithTrackmijn({
+      const { missingLocalCards, updatedLocalCards, removedLocalCards } =
+        await transportklokService.syncLocalCardsWithTrackmijn({
         ...state.cards,
       })
 
       await importTrackmijnCards(updatedLocalCards)
       await importTrackmijnCards(missingLocalCards)
+
+      for (const cardNumber of removedLocalCards) {
+        delete state.cards[cardNumber]
+      }
     } catch (error) {
       console.error('Kon TrackMijn-kaarten niet synchroniseren', error)
     } finally {
