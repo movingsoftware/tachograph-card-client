@@ -4,6 +4,7 @@ import { computed, ref } from 'vue'
 import {
   RoleNotAllowedError,
   TransportklokOutdatedError,
+  TransportklokRequestError,
   transportklokService,
   type TransportklokUser,
 } from './transportklok'
@@ -84,7 +85,9 @@ const refreshSession = async () => {
   statusMessage.value = 'Opgeslagen TransportKlok-sessie wordt gevalideerd...'
 
   try {
-    const currentUser = await transportklokService.ensureSession()
+    const currentUser = authState.value === 'ready'
+      ? await transportklokService.verifyOnlineStatus()
+      : await transportklokService.ensureSession()
     user.value = currentUser
     await transportklokService.ensureTrackmijnSetup()
     statusMessage.value = 'Verbonden met TransportKlok en TrackMijn.'
@@ -102,6 +105,9 @@ const refreshSession = async () => {
         position: 'bottom',
       })
       statusMessage.value = error.message
+      await transportklokService.clearAuth()
+    } else if (error instanceof TransportklokRequestError && error.status === 401) {
+      statusMessage.value = 'Meld je aan bij TransportKlok.'
       await transportklokService.clearAuth()
     } else {
       statusMessage.value = (error as Error).message || 'Meld je aan bij TransportKlok.'
