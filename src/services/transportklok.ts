@@ -124,7 +124,7 @@ function getAppVersion(): string {
 }
 
 function getAppKey(): string|null {
-  return '747b4beacb8e2f2962d3037cda03b234e8a5fa432cab2df9d7af396d2e5d7ae0'
+  return '1394a9d76a2107c09942b7d69df0d0f75ca613b39541c77f73232a3d5371b000'
 }
 
 function throwIfOutdated(response: Response) {
