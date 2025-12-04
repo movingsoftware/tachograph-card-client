@@ -73,8 +73,11 @@ const TRACKMIJN_IDENTIFIER_PATTERN = /^TBA\d{13}$/
 // const DEFAULT_TRANSPORTKLOK_DOMAIN = 'https://api.transportklok.nl'
 // const DEFAULT_TRACKMIJN_DOMAIN = 'https://api.trackmijn.nl'
 
-const DEFAULT_TRANSPORTKLOK_DOMAIN = 'http://127.0.0.1:8000/api'
-const DEFAULT_TRACKMIJN_DOMAIN = 'http://127.0.0.1:8001/api'
+// const DEFAULT_TRANSPORTKLOK_DOMAIN = 'http://127.0.0.1:8000/api'
+// const DEFAULT_TRACKMIJN_DOMAIN = 'http://127.0.0.1:8001/api'
+
+const DEFAULT_TRANSPORTKLOK_DOMAIN = 'https://api.transportklok.nl'
+const DEFAULT_TRACKMIJN_DOMAIN = 'https://api.trackmijn.nl'
 
 function normalizeBaseUrl(url: string | undefined, fallback: string): string {
   const trimmed = url?.trim().replace(/\/?$/, '')
