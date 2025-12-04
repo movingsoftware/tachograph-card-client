@@ -35,8 +35,8 @@ type TrackmijnTokenResponse = {
 type TrackmijnCard = {
   id: string
   name: string
+  label: string
   number: string
-  flespi_device_id: string
 }
 
 export class RoleNotAllowedError extends Error {
@@ -536,9 +536,9 @@ export class TransportklokService {
 
       if (ident) {
         acc[ident] = {
-          name: card.name,
+          name: card.label,
           iccid: '',
-          id: card.flespi_device_id,
+          id: card.id,
         }
       }
 
@@ -639,7 +639,7 @@ export class TransportklokService {
 
   private async updateTrackmijnCardsFromLocal(trackmijnCards: TrackmijnCard[]) {
     for (const card of trackmijnCards) {
-      const ident = card.configuration?.ident?.toUpperCase()
+      const ident = card.number?.toUpperCase()
       if (!ident) {
         continue
       }

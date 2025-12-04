@@ -32,7 +32,7 @@ const displayMessage = computed(
 )
 
 const openDownloadPage = async () => {
-  await openUrl('https://transportklok.nl/')
+  await openUrl('https://app.transportklok.nl/management/fleet/telematics')
 }
 </script>
 
