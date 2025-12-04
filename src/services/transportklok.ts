@@ -54,6 +54,12 @@ export class TransportklokOutdatedError extends Error {
   }
 }
 
+export class TransportklokRequestError extends Error {
+  constructor(message: string, public status: number) {
+    super(message)
+  }
+}
+
 type ServerTheme = 'Auto' | 'Dark' | 'Light'
 
 const DEVICE_TOKEN_KEY = 'transportklok_device_token'
@@ -411,7 +417,7 @@ export class TransportklokService {
     if (!response.ok) {
       const data = await parseJson(response)
       console.error('TransportKlok request failed', data)
-      throw new Error('TransportKlok-verzoek mislukt')
+      throw new TransportklokRequestError('TransportKlok-verzoek mislukt', response.status)
     }
 
     const data = await parseJson<T>(response)
@@ -422,9 +428,11 @@ export class TransportklokService {
     return data
   }
 
-  async fetchCurrentUser(): Promise<TransportklokUser> {
+  async fetchCurrentUser(retrySession = true): Promise<TransportklokUser> {
     const user = await this.transportklokRequest<TransportklokUser>(
-      '/rest/me?relations[]=currentOrganization.name&relations[]=current_role'
+      '/rest/me?relations[]=currentOrganization.name&relations[]=current_role',
+      {},
+      retrySession
     )
     return user
   }
@@ -443,6 +451,16 @@ export class TransportklokService {
     }
 
     const user = await this.fetchCurrentUser()
+    await this.persistAfterUserValidation(user)
+    return user
+  }
+
+  async verifyOnlineStatus(): Promise<TransportklokUser> {
+    if (!this.sessionToken) {
+      throw new TransportklokRequestError('Niet geauthenticeerd bij TransportKlok', 401)
+    }
+
+    const user = await this.fetchCurrentUser(false)
     await this.persistAfterUserValidation(user)
     return user
   }
