@@ -102,7 +102,6 @@ export const useAuthStore = defineStore('auth', () => {
 
     const setSessionToken = (token: string | null) => {
         sessionToken.value = token
-        fleetStore.setSessionToken(token)
         setAuthToken(token)
 
         if (token) {
@@ -331,25 +330,23 @@ export const useAuthStore = defineStore('auth', () => {
 
         try {
             await ensureAuthenticatedSession()
-            const currentUser = await fetchUser()
-
-            console.log('validate user')
-            await validateUserRole(currentUser)
-            user.value = currentUser
-            console.log('sync version')
-            await syncDeviceVersion()
-            console.log('ensure fleet')
-            await fleet.ensureSetup()
-
-            console.log('clear comm')
-
-            clearCommunicationIssue()
-            statusMessage.value = 'Verbonden.'
-            authState.value = 'ready'
 
             clearPoll()
             pendingToken.value = null
             persistConnectionState()
+
+            const currentUser = await fetchUser()
+            await validateUserRole(currentUser)
+            user.value = currentUser
+
+            await syncDeviceVersion()
+
+            await fleet.ensureSetup()
+
+            clearCommunicationIssue()
+
+            statusMessage.value = 'Verbonden.'
+            authState.value = 'ready'
         } catch (error) {
             authState.value = 'needs-login'
 
@@ -377,9 +374,12 @@ export const useAuthStore = defineStore('auth', () => {
     const pollForSession = async () => {
         if (pollStartedAt.value && Date.now() - pollStartedAt.value > MAX_POLL_DURATION_MS) {
             clearPoll()
+
             isRequestingLogin.value = false
+
             pendingToken.value = null
             persistConnectionState()
+
             statusMessage.value = 'Authenticatie verlopen, probeer opnieuw te verbinden.'
             authState.value = 'needs-login'
             return
@@ -417,30 +417,20 @@ export const useAuthStore = defineStore('auth', () => {
                 throw new Error('Apparaattoken ontbreekt in de respons')
             }
 
-            console.log('set token')
             setDeviceToken(createdDeviceToken)
             await createSessionFromDevice()
 
-            console.log('get user')
-            const currentUser = await fetchUser()
+            pendingToken.value = null
+            persistConnectionState()
 
-            console.log('validate user role')
+            const currentUser = await fetchUser()
             await validateUserRole(currentUser)
             user.value = currentUser
 
-            console.log('sync device version')
             await syncDeviceVersion()
-
-            console.log('ensure fleet setup')
             await fleet.ensureSetup()
 
-            console.log('clear comm')
-
             clearCommunicationIssue()
-
-            console.log('persist connetion state')
-            pendingToken.value = null
-            persistConnectionState()
 
             statusMessage.value = 'Verbonden.'
             authState.value = 'ready'
@@ -498,6 +488,7 @@ export const useAuthStore = defineStore('auth', () => {
             await clearAuth()
             communicationStore.clearIssue()
             persistConnectionState()
+
             authState.value = 'needs-login'
             statusMessage.value = 'Niet verbonden.'
         }

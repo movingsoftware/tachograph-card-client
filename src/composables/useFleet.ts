@@ -54,7 +54,7 @@ const getFleetStore = () => {
 const clearAuth = () => {
     const store = getFleetStore()
 
-    store.clearAuth()
+    store.clearSession()
 }
 
 // Resources: Client
@@ -134,6 +134,10 @@ const deleteClient = async (id: string): Promise<void> => {
 }
 
 const ensureClient = async (): Promise<void> => {
+    if (! getFleetStore().sessionToken) {
+        await getFleetStore().refreshSessionToken()
+    }
+
     const store = getFleetStore()
     const identifier = ensureClientIdentifier()
 

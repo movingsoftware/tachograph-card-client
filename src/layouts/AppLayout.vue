@@ -55,6 +55,7 @@ listen('global-notification', (event) => {
     const accessMessage =
         "De applicatie kan de map '~/Documents/tba' niet openen en kan daardoor niet doorgaan. Mogelijk is deze map al aangemaakt door een andere versie van het programma en gelden er lokale toegangsbeperkingen. Een mogelijke oplossing: hernoem de huidige map bijvoorbeeld naar tba1 en start de applicatie opnieuw. De applicatie maakt dan een nieuwe map met de juiste toegangsrechten.".trim()
 
+    console.log(payload)
     if (payload.notification_type === 'access') {
         Notify.create({
             message: accessMessage,

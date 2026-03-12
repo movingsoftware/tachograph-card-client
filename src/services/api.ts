@@ -10,10 +10,10 @@ const API_BASE_URL =
 const { api, setAuthToken } = createApiService({
     baseURL: API_BASE_URL,
     communicationEvents,
+    refreshSession: () => useAuthStore().refreshSessionToken(),
     getSessionToken: () => useAuthStore().sessionToken,
     clearSession: () => useAuthStore().clearSession(),
     isOnline: () => useNetworkStore().isOnline,
-    refreshSession: () => useAuthStore().refreshSessionToken(),
 })
 
 export { setAuthToken }

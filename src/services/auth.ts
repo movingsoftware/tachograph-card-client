@@ -59,3 +59,4 @@ export const createSession = authService.createSession
 export const deleteDevice = authService.deleteDevice
 export const getCurrentUser = authService.getCurrentUser
 export const updateDevice = authService.updateDevice
+export const requestManagementFleetManagementToken = authService.requestManagementFleetManagementToken

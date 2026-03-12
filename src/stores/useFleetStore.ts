@@ -1,30 +1,35 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
+import { requestManagementFleetManagementToken } from 'src/services/auth'
 
-const TOKEN_KEY = 'fleet_token'
+const SESSION_TOKEN_KEY = 'fleet_session_token'
 const COMPANY_ID_KEY = 'fleet_company_id'
 const CLIENT_NAME_KEY = 'fleet_client_name'
 const CLIENT_ID_KEY = 'fleet_client_id'
 
 export const useFleetStore = defineStore('fleet', () => {
-    const token = ref<string | null>(localStorage.getItem(TOKEN_KEY))
+    const sessionToken = ref<string | null>(localStorage.getItem(SESSION_TOKEN_KEY))
     const companyId = ref<string | null>(localStorage.getItem(COMPANY_ID_KEY))
     const clientId = ref<string | null>(localStorage.getItem(CLIENT_ID_KEY))
     const clientName = ref<string | null>(localStorage.getItem(CLIENT_NAME_KEY))
 
-    const setToken = (value: string | null) => {
-        token.value = value
+    const setSessionToken = (value: string | null) => {
+        sessionToken.value = value
 
         if (value) {
-            localStorage.setItem(TOKEN_KEY, value)
+            localStorage.setItem(SESSION_TOKEN_KEY, value)
         } else {
-            localStorage.removeItem(TOKEN_KEY)
+            localStorage.removeItem(SESSION_TOKEN_KEY)
         }
     }
 
-    // Backward-compatible alias used by auth flow.
-    const setSessionToken = (value: string | null) => {
-        setToken(value)
+    const refreshSessionToken = async (): Promise<boolean> => {
+        const data = await requestManagementFleetManagementToken()
+
+        setSessionToken(data.token);
+        setCompanyId(data.company_id);
+
+        return true;
     }
 
     const setCompanyId = (value: string | null) => {
@@ -53,22 +58,22 @@ export const useFleetStore = defineStore('fleet', () => {
         }
     }
 
-    const clearAuth = () => {
-        setToken(null)
+    const clearSession = () => {
+        setSessionToken(null)
         setCompanyId(null)
         setClientId(null)
     }
 
     return {
-        token,
+        sessionToken,
         companyId,
         clientId,
         clientName,
-        setToken,
         setSessionToken,
+        refreshSessionToken,
         setCompanyId,
         setClientId,
         setClientName,
-        clearAuth,
+        clearSession,
     }
 })
