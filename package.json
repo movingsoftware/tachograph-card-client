@@ -2,7 +2,7 @@
   "name": "tachograph-card-client",
   "version": "0.0.1",
   "description": "TransportKlok Tachograph Card Client",
-  "productName": "TransportKlok Tachograaf kaart verbinder",
+  "productName": "TransportKlok Tachograafkaart Verbinder",
   "author": "Redmar Bakker <redmar@transportklok.nl>",
   "type": "module",
   "private": true,
@@ -18,8 +18,11 @@
   "dependencies": {
     "@quasar/extras": "^1.16.4",
     "@tauri-apps/plugin-opener": "^2.5.2",
+    "@tauri-apps/plugin-os": "^2.3.2",
     "animate.css": "^4.1.1",
+    "pinia": "^3.0.3",
     "quasar": "^2.16.0",
+    "shared.js": "file:../shared.js",
     "vue": "^3.4.18",
     "vue-router": "^4.0.12"
   },
@@ -36,6 +39,7 @@
     "eslint-plugin-vue": "^9.30.0",
     "globals": "^15.12.0",
     "prettier": "^3.3.3",
+    "tailwindcss": "^3.4.19",
     "typescript": "~5.5.3",
     "vite-plugin-checker": "^0.8.0",
     "vue-tsc": "^2.0.29"

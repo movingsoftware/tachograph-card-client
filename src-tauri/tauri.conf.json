@@ -1,18 +1,18 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "TransportKlok Tachograafkaart verbinder",
+  "productName": "TransportKlok Tachograafkaart Verbinder",
   "version": "0.0.1",
   "identifier": "com.transportklok.tcc",
   "build": {
     "frontendDist": "../dist/spa",
-    "devUrl": "http://192.168.178.191:9000",
+    "devUrl": "http://127.0.0.1:8002",
     "beforeDevCommand": "npm run dev",
     "beforeBuildCommand": "npm run build"
   },
   "app": {
     "windows": [
       {
-        "title": "TransportKlok Tachograafkaart verbinder",
+        "title": "TransportKlok Tachograafkaart Verbinder",
         "width": 620,
         "height": 400,
         "decorations": true,

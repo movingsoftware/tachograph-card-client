@@ -109,7 +109,7 @@ import type { SmartCard, Reader } from './models'
 import { onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { listen, emit, type UnlistenFn } from '@tauri-apps/api/event'
-import { transportklokService } from '../services/transportklok'
+import { useFleet } from '../composables/useFleet'
 
 // Blinking status for the card icon during authentication.
 const isBlinking = ref(true) // controls the blinking status of the icon
@@ -124,6 +124,7 @@ const state = reactive({
 
 let focusUnlisten: UnlistenFn | null = null
 let syncPromise: Promise<void> | null = null
+const fleet = useFleet()
 
 const normalizeCardNumber = (cardNumber: string) => cardNumber.trim().toUpperCase()
 
@@ -160,7 +161,7 @@ const importTrackmijnCards = async (cards: Record<string, SmartCard>) => {
     try {
       await persistCardLocally(cardNumber, content, false)
     } catch (error) {
-      console.error('Failed to import TrackMijn card', error)
+      console.error('Failed to import card', error)
     }
   }
 }
@@ -173,7 +174,7 @@ const syncTrackmijnCards = async () => {
   syncPromise = (async () => {
     try {
       const { missingLocalCards, updatedLocalCards, removedLocalCards } =
-        await transportklokService.syncLocalCardsWithTrackmijn({
+        await fleet.syncCards({
         ...state.cards,
       })
 
@@ -184,7 +185,7 @@ const syncTrackmijnCards = async () => {
         delete state.cards[cardNumber]
       }
     } catch (error) {
-      console.error('Kon TrackMijn-kaarten niet synchroniseren', error)
+      console.error('Kon kaarten niet synchroniseren', error)
     } finally {
       syncPromise = null
     }
@@ -294,7 +295,7 @@ async function addCard(number: string, data: SmartCard) {
 
   try {
     await persistCardLocally(normalizedNumber, sanitizedData)
-    await transportklokService.createTrackmijnCard(normalizedNumber, sanitizedData)
+    await fleet.createCard(normalizedNumber, sanitizedData)
     await syncTrackmijnCards()
   } catch (error) {
     console.error('Kon kaart niet toevoegen', error)
@@ -317,7 +318,7 @@ async function updateCard(number: string, data: SmartCard) {
 const removeCard = async (cardNumber: string) => {
   try {
     const normalizedNumber = normalizeCardNumber(cardNumber)
-    await transportklokService.deleteTrackmijnCard(normalizedNumber, state.cards[normalizedNumber]?.id)
+    await fleet.deleteCard(normalizedNumber, state.cards[normalizedNumber]?.id)
     await invoke('remove_card', { cardnumber: normalizedNumber })
     delete state.cards[normalizedNumber]
     console.log('Card removed:', normalizedNumber)

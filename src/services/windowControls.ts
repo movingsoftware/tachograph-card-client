@@ -1,6 +1,10 @@
 import type { UnlistenFn } from '@tauri-apps/api/event'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 
+export async function setTitle(): Promise<void> {
+    await getCurrentWindow().setTitle('TransportKlok Verbinder')
+}
+
 export async function minimizeWindow(): Promise<void> {
   await getCurrentWindow().minimize()
 }

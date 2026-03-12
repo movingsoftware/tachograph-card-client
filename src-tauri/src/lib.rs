@@ -13,6 +13,7 @@ use tauri::{async_runtime, Listener, Manager, WindowEvent}; // Tauri application
 pub fn run() {
     // start builder to run tauri applicationrustup target add aarch64-pc-windows-msvc
     tauri::Builder::default()
+        .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_opener::init())
         .setup(move |app| {
             // Obtain a lightweight reference to the app for convenient interaction
