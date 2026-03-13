@@ -23,7 +23,7 @@
     "animate.css": "^4.1.1",
     "pinia": "^3.0.3",
     "quasar": "^2.16.0",
-    "shared.js": "file:../shared.js",
+    "shared.js": "github:transportklok/shared.js",
     "vue": "^3.4.18",
     "vue-router": "^4.0.12"
   },
