@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@quasar/extras": "^1.16.4",
+    "@sentry/vue": "^10.43.0",
     "@tauri-apps/plugin-opener": "^2.5.2",
     "@tauri-apps/plugin-os": "^2.3.2",
     "animate.css": "^4.1.1",

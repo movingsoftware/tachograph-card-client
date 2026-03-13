@@ -1,7 +1,7 @@
 <template>
     <div class="flex items-center justify-center h-screen bg-white w-full">
         <img
-            src="/src/assets/splash.png"
+            :src="splashImageUrl"
             alt="TransportKlok Logo"
             class="object-cover w-full h-full"
         />
@@ -9,7 +9,7 @@
 </template>
 
 <script setup lang="ts">
-//
+import splashImageUrl from 'src/assets/splash.png'
 </script>
 
 <style scoped>

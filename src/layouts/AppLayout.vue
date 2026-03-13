@@ -9,7 +9,7 @@
 </template>
 
 <script setup lang="ts">
-import { useQuasar, Notify } from 'quasar'
+import { useQuasar } from 'quasar'
 import { listen } from '@tauri-apps/api/event'
 import { useFlespiStore } from 'stores/useFlespiStore'
 import 'animate.css'
@@ -46,37 +46,37 @@ listen('global-config-server', (event) => {
     console.error('Error listening to global-config-server:', error)
 })
 
-listen('global-notification', (event) => {
-    const payload = event.payload as {
-        notification_type: string
-        message: string
-    }
-
-    const accessMessage =
-        "De applicatie kan de map '~/Documents/tba' niet openen en kan daardoor niet doorgaan. Mogelijk is deze map al aangemaakt door een andere versie van het programma en gelden er lokale toegangsbeperkingen. Een mogelijke oplossing: hernoem de huidige map bijvoorbeeld naar tba1 en start de applicatie opnieuw. De applicatie maakt dan een nieuwe map met de juiste toegangsrechten.".trim()
-
-    console.log(payload)
-    if (payload.notification_type === 'access') {
-        Notify.create({
-            message: accessMessage,
-            color: 'red',
-            position: 'bottom',
-            timeout: 999000,
-        })
-    } else if (payload.notification_type === 'version') {
-        Notify.create({
-            message: accessMessage,
-            color: 'green',
-            position: 'bottom',
-            timeout: 15000,
-            classes: 'animate__animated animate__shakeX',
-        })
-    } else {
-        console.log('global-notification: unknown type:', payload.notification_type)
-    }
-}).catch((error) => {
-    console.error('Error listening to global-notification:', error)
-})
+// // eslint-disable-next-line @typescript-eslint/no-misused-promises
+// listen('global-notification', async (event) => {
+//     // const payload = event.payload as {
+//     //     notification_type: string
+//     //     message: string
+//     // }
+//     //
+//     // const accessMessage =
+//     //     "De applicatie kan de map '~/Documents/TransportKlok/TachoConnect' niet openen en kan daardoor niet doorgaan. Mogelijk is deze map al aangemaakt door een andere versie van het programma en gelden er lokale toegangsbeperkingen. Een mogelijke oplossing: hernoem de huidige map bijvoorbeeld naar tba1 en start de applicatie opnieuw. De applicatie maakt dan een nieuwe map met de juiste toegangsrechten.".trim()
+//
+//     // if (payload.notification_type === 'access') {
+//     //     Notify.create({
+//     //         message: accessMessage,
+//     //         color: 'red',
+//     //         position: 'bottom',
+//     //         timeout: 999000,
+//     //     })
+//     // } else if (payload.notification_type === 'version') {
+//     //     Notify.create({
+//     //         message: accessMessage,
+//     //         color: 'green',
+//     //         position: 'bottom',
+//     //         timeout: 15000,
+//     //         classes: 'animate__animated animate__shakeX',
+//     //     })
+//     // } else {
+//     //     console.log('global-notification: unknown type:', payload.notification_type)
+//     // }
+// }).catch((error) => {
+//     console.error('Error listening to global-notification:', error)
+// })
 </script>
 
 <style scoped>

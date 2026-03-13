@@ -38,21 +38,21 @@ pub fn setup_logging() {
         log_path.push(env::var("HOME").unwrap());
         log_path.push("Documents");
         log_path.push("TransportKlok");
-        log_path.push("TachographConnector");
+        log_path.push("TachoConnect");
     }
     #[cfg(target_os = "linux")]
     {
         log_path.push(env::var("HOME").unwrap());
         log_path.push("Documents");
         log_path.push("TransportKlok");
-        log_path.push("TachographConnector");
+        log_path.push("TachoConnect");
     }
     #[cfg(target_os = "windows")]
     {
         log_path.push(env::var("USERPROFILE").unwrap());
         log_path.push("Documents");
         log_path.push("TransportKlok");
-        log_path.push("TachographConnector");
+        log_path.push("TachoConnect");
     }
 
     if let Err(e) = std::fs::create_dir_all(&log_path) {

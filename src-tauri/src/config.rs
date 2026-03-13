@@ -85,7 +85,7 @@ pub fn get_config_path() -> io::Result<PathBuf> {
 
     config_path.push("Documents");
     config_path.push("TransportKlok");
-    config_path.push("TachographConnector");
+    config_path.push("TachoConnect");
 
     log::debug!("Config directory path resolved to: {:?}", config_path);
 

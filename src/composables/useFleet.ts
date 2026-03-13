@@ -133,45 +133,39 @@ const deleteClient = async (id: string): Promise<void> => {
     }
 }
 
-const ensureClient = async (): Promise<void> => {
+const setup = async (): Promise<void> => {
     if (! getFleetStore().sessionToken) {
         await getFleetStore().refreshSessionToken()
     }
 
+    const identifier = await ensureClient()
+
+    const flespiStore = useFlespiStore()
+    flespiStore.setCachedIdent(identifier)
+    await flespiStore.applyFlespiServerConfig()
+
+    await ensureCardsExist()
+}
+
+const ensureClient = async (): Promise<string> => {
     const store = getFleetStore()
     const identifier = ensureClientIdentifier()
 
-    if (!store.clientId) {
-        const createdId = await createClient()
-        const exists = await hasClient(createdId)
-
-        if (!exists) {
+    if (store.clientId) {
+        if (! await hasClient(store.clientId)) {
             resetClient()
+        }
+    }
+
+    if (! store.clientId) {
+        const createdId = await createClient()
+
+        if (! await hasClient(createdId)) {
             throw new Error('Kan client niet aanmaken of verifiëren')
         }
     }
 
-    if (store.clientId) {
-        const exists = await hasClient(store.clientId)
-
-        if (! exists) {
-            resetClient()
-
-            const createdId = await createClient()
-            const exists = await hasClient(createdId)
-
-            if (! exists) {
-                resetClient()
-
-                throw new Error('Kan client niet aanmaken of verifiëren')
-            }
-        }
-    }
-
-    await ensureCardsExist()
-    const flespiStore = useFlespiStore()
-    flespiStore.setCachedIdent(identifier)
-    await flespiStore.applyFlespiServerConfig()
+    return identifier
 }
 
 // Resources: Cards
@@ -378,8 +372,8 @@ export function useFleet() {
     ensureClientIdentifier()
 
     return {
+        setup,
         clearAuth,
-        ensureSetup: ensureClient,
         ensureClient,
         resetClient,
         deleteClient,

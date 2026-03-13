@@ -149,9 +149,10 @@ export const useAuthStore = defineStore('auth', () => {
             }
 
             pendingToken.value = parsed.pendingToken
+            beginPolling()
+
             statusMessage.value = 'Eerder aangevraagde authenticatie wordt gecontroleerd...'
             authState.value = 'needs-login'
-            beginPolling()
         } catch (error) {
             console.warn('Kon opgeslagen verbindingsstatus niet herstellen', error)
         }
@@ -340,8 +341,7 @@ export const useAuthStore = defineStore('auth', () => {
             user.value = currentUser
 
             await syncDeviceVersion()
-
-            await fleet.ensureSetup()
+            await fleet.setup()
 
             clearCommunicationIssue()
 
@@ -428,7 +428,7 @@ export const useAuthStore = defineStore('auth', () => {
             user.value = currentUser
 
             await syncDeviceVersion()
-            await fleet.ensureSetup()
+            await fleet.setup()
 
             clearCommunicationIssue()
 
@@ -496,6 +496,7 @@ export const useAuthStore = defineStore('auth', () => {
 
     const initializeConnection = async () => {
         restoreConnectionState()
+
         await refreshSession()
     }
 

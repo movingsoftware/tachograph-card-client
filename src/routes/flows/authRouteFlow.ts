@@ -20,12 +20,12 @@ export const createAuthRouteFlow = (options: AuthRouteFlowOptions): RouteFlow<'a
         {
             id: 'check-authenticated',
             run: async ({ next }) => {
-                if (authStore.isConnected) {
-                    await next()
+                if (! authStore.isConnected) {
+                    await replaceRoute(ROUTES.AUTH)
                     return
                 }
 
-                await replaceRoute(ROUTES.AUTH)
+                await next()
             },
         },
         {
