@@ -1,6 +1,6 @@
 {
   "name": "tachograph-card-client",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "TransportKlok Tachograph Card Client",
   "productName": "TransportKlok Tachograafkaart Verbinder",
   "author": "Redmar Bakker <redmar@transportklok.nl>",
