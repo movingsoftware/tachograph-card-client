@@ -4210,8 +4210,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "tacho-bridge-application"
-version = "0.7.0"
+name = "tacho-connect"
+version = "0.0.2"
 dependencies = [
  "chrono",
  "fern",

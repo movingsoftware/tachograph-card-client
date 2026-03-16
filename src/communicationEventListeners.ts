@@ -1,6 +1,7 @@
 import { communicationEvents } from './services/communicationEvents'
 import { routeFlow } from './services/routeFlow'
 import { getCurrentPath, navigateTo } from './services/routerNavigation'
+import { logger } from './services/logger'
 
 let initialized = false
 let teardownHandlers: Array<() => void> = []
@@ -18,7 +19,28 @@ export const setupCommunicationEventListeners = () => {
     })
   })
 
-  const offMaintenance = communicationEvents.on('maintenance', async () => {
+  const offMaintenance = communicationEvents.on('maintenance', async (payload) => {
+    const maintenance = (payload || {}) as {
+      reason?: string
+      status?: number
+      method?: string
+      url?: string
+      code?: string
+      isOnline?: boolean
+      consecutiveFailureCount?: number
+      message?: string
+    }
+
+    void logger.warn(
+      `Onderhoud actief getriggerd. reason=${maintenance.reason ?? 'unknown'} status=${
+        maintenance.status ?? 'n/a'
+      } method=${maintenance.method ?? 'n/a'} url=${maintenance.url ?? 'n/a'} code=${
+        maintenance.code ?? 'n/a'
+      } online=${maintenance.isOnline ?? 'n/a'} failures=${
+        maintenance.consecutiveFailureCount ?? 'n/a'
+      } message=${maintenance.message ?? 'n/a'}`,
+    )
+
     routeFlow.clear()
     await routeFlow.start('maintenance', {
       onComplete: async () => {

@@ -204,3 +204,15 @@ fn version_to_number(version: &str) -> u32 {
         .filter_map(|s| s.parse::<u32>().ok())
         .fold(0, |acc, num| acc * 100 + num)
 }
+
+#[tauri::command]
+pub fn frontend_log(level: String, message: String) {
+    let normalized = level.to_lowercase();
+
+    match normalized.as_str() {
+        "debug" => log::debug!("[frontend] {}", message),
+        "warn" | "warning" => log::warn!("[frontend] {}", message),
+        "error" => log::error!("[frontend] {}", message),
+        _ => log::info!("[frontend] {}", message),
+    }
+}

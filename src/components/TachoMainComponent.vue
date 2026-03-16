@@ -108,7 +108,7 @@ import SmartCardList from './SmartCardList.vue'
 import type { SmartCard, Reader } from './models'
 import { onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
-import { listen, emit, type UnlistenFn } from '@tauri-apps/api/event'
+import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { useFleet } from '../composables/useFleet'
 
 // Blinking status for the card icon during authentication.
@@ -345,12 +345,6 @@ listen('global-card-config-updated', (event) => {
   }
 }).catch((error) => {
   console.error('Error listening to global-card-config-updated:', error)
-})
-
-// Generate an event to inform the back-end that the front-end is loaded.
-// To correctly display states in the application.
-emit('frontend-loaded', { message: 'Hello from frontend!' }).catch((error) => {
-  console.error('Error emitting frontend-loaded event:', error)
 })
 
 const handleFocus = () => {

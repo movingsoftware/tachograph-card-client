@@ -8,7 +8,10 @@ mod mqtt; // MQTT communication.
 mod smart_card; // PCSC module for smart card operations. // Global access to app state and emitters.
 
 // ───── External Crates ─────
+use std::sync::Once;
 use tauri::{async_runtime, Listener, Manager, WindowEvent}; // Tauri application framework and async runtime.
+
+static LOGGER_INIT: Once = Once::new();
 
 pub fn run() {
     // start builder to run tauri applicationrustup target add aarch64-pc-windows-msvc
@@ -23,19 +26,16 @@ pub fn run() {
             global_app_handle::set_app_handle(app_handle.clone());
 
             if let Some(window) = app.get_webview_window("main") {
-                // getting Application version foriom the Cargo.toml file
-                let version = env!("CARGO_PKG_VERSION");
-                // Form new Title with the version
-                let title = format!("v{}", version);
-                // Set new title to the window
                 window
-                    .set_title(&title)
+                    .set_title("TransportKlok: Tacho Connect")
                     .expect("Failed to set window title");
 
                 let front_app_handle = app_handle.clone();
 
                 // Frontend loading is late, so we execute a callback to the "frontend-loaded" event which the front sends when it is loaded
                 window.listen("frontend-loaded", move |event: tauri::Event| {
+                    LOGGER_INIT.call_once(logger::setup_logging);
+
                     #[cfg(target_os = "linux")]
                     {
                         // Temporary solution only for linux because webview does not load even after response from front.
@@ -46,11 +46,6 @@ pub fn run() {
                     {
                         std::thread::sleep(std::time::Duration::from_millis(300));
                     }
-
-                    // Initialize logging. This function configures the logging system using the `fern` crate.
-                    // need to debug later. Add checking for the init result
-                    //
-                    logger::setup_logging();
 
                     // Initialize configuration. This function reads the configuration file and initializes the configuration structure.
                     // The configuration file is located in the `assets` directory and is named `config.yaml`.
@@ -100,6 +95,7 @@ pub fn run() {
             config::remove_card,           // remove card from config
             smart_card::manual_sync_cards, // manual sync cards from the frontend
             app_connect::app_connection,   // App connection to the MQTT broker
+            logger::frontend_log,          // Frontend -> Rust log bridge
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

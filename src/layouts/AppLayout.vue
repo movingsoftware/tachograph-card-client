@@ -1,8 +1,4 @@
 <template>
-    <q-header class="bg-white text-dark q-py-sm q-px-md">
-        <div class="title-text">TransportKlok Tachograafkaart Verbinder</div>
-    </q-header>
-
     <q-page-container class="fit">
         <router-view />
     </q-page-container>

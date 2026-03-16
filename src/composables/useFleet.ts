@@ -12,6 +12,7 @@ import {
     listTachographCompanyCards,
     updateTachographCompanyCard,
 } from 'src/services/fleet'
+import { logger } from 'src/services/logger'
 
 const IDENTIFIER_PREFIX = 'TBA'
 const IDENTIFIER_PATTERN = /^TBA\d{13}$/
@@ -23,7 +24,6 @@ type FleetApiError = {
     response?: {
         status?: number
         data?: {
-            id?: string
             message?: string
         }
     }
@@ -98,6 +98,8 @@ const hasClient = async (id: string): Promise<boolean> => {
         await getTachographCardClient(id)
         return true
     } catch (error) {
+        void logger.error(`useFleet.hasClient failed for id=${id}`, error)
+
         if (getErrorStatus(error) === 404) {
             return false
         }
@@ -114,12 +116,18 @@ const createClient = async (): Promise<string> => {
         const data = await createTachographCardClient(identifier)
 
         if (!data?.id) {
+            void logger.error(
+                'useFleet.createClient throwing missing-client-id',
+                new Error('Kan apparaat-ID van client niet bepalen'),
+            )
             throw new Error('Kan apparaat-ID van client niet bepalen')
         }
 
         store.setClientId(data.id)
         return data.id
     } catch (error) {
+        void logger.error(`useFleet.createClient failed for identifier=${identifier}`, error)
+
         if (getErrorStatus(error) === 409) {
             const existingClientId = getErrorClientId(error)
             if (existingClientId) {
@@ -127,6 +135,10 @@ const createClient = async (): Promise<string> => {
                 return existingClientId
             }
 
+            void logger.error(
+                'useFleet.createClient throwing missing-existing-client-id',
+                new Error('Kan apparaat-ID van bestaande client niet bepalen'),
+            )
             throw new Error('Kan apparaat-ID van bestaande client niet bepalen')
         }
 
@@ -139,6 +151,8 @@ const deleteClient = async (id: string): Promise<void> => {
         await deleteTachographCardClient(id)
         resetClient()
     } catch (error) {
+        void logger.error(`useFleet.deleteClient failed for id=${id}`, error)
+
         if (getErrorStatus(error) === 404) {
             resetClient()
             return
@@ -176,6 +190,10 @@ const ensureClient = async (): Promise<string> => {
         const createdId = await createClient()
 
         if (! await hasClient(createdId)) {
+            void logger.error(
+                `useFleet.ensureClient throwing created-client-not-found id=${createdId}`,
+                new Error('Kan client niet aanmaken of verifiëren'),
+            )
             throw new Error('Kan client niet aanmaken of verifiëren')
         }
     }
@@ -255,6 +273,8 @@ const updateCard = async (cardId: string, cardData: SmartCard): Promise<void> =>
     try {
         await updateTachographCompanyCard(cardId, payload)
     } catch (error) {
+        void logger.error(`useFleet.updateCard failed for cardId=${cardId}`, error)
+
         if (getErrorStatus(error) === 404) {
             return
         }
@@ -293,6 +313,8 @@ const createCard = async (number: string, cardData?: SmartCard): Promise<void> =
     try {
         await createTachographCompanyCard(payload)
     } catch (error) {
+        void logger.error(`useFleet.createCard failed for number=${number}`, error)
+
         if (getErrorStatus(error) === 409) {
             return
         }
@@ -331,12 +353,21 @@ const deleteCard = async (number: string, cardId?: string): Promise<void> => {
     }
 
     if (!resolvedCardId) {
+        void logger.error(
+            `useFleet.deleteCard throwing missing-card-id number=${number}`,
+            new Error('Kan kaart niet bepalen'),
+        )
         throw new Error('Kan kaart niet bepalen')
     }
 
     try {
         await deleteTachographCompanyCard(resolvedCardId)
     } catch (error) {
+        void logger.error(
+            `useFleet.deleteCard failed for number=${number} cardId=${resolvedCardId}`,
+            error,
+        )
+
         if (getErrorStatus(error) === 404) {
             return
         }

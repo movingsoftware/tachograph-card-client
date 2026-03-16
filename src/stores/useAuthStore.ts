@@ -23,6 +23,7 @@ import {
     getCurrentRuntimeVersionSignature,
 } from '../services/deviceRuntime'
 import { openUrl } from '@tauri-apps/plugin-opener'
+import { logger } from '../services/logger'
 
 type TransportklokUser = {
     id?: string
@@ -153,7 +154,7 @@ export const useAuthStore = defineStore('auth', () => {
             statusMessage.value = 'Eerder aangevraagde authenticatie wordt gecontroleerd...'
             authState.value = 'needs-login'
         } catch (error) {
-            console.warn('Kon opgeslagen verbindingsstatus niet herstellen', error)
+            void logger.error('useAuthStore.restoreConnectionState failed', error, 'warn')
         }
     }
 
@@ -205,6 +206,10 @@ export const useAuthStore = defineStore('auth', () => {
     // Auth primitives
     const requireDeviceToken = (): string => {
         if (!deviceToken.value) {
+            void logger.error(
+                'useAuthStore.requireDeviceToken throwing not-authenticated',
+                new TransportklokRequestError('Niet geauthenticeerd', 401),
+            )
             throw new TransportklokRequestError('Niet geauthenticeerd', 401)
         }
 
@@ -218,12 +223,17 @@ export const useAuthStore = defineStore('auth', () => {
             const createdSessionToken = await createSession(token)
 
             if (!createdSessionToken) {
+                void logger.error(
+                    'useAuthStore.createSessionFromDevice throwing missing-session-token',
+                    new Error('Sessietoken ontbreekt in de respons'),
+                )
                 throw new Error('Sessietoken ontbreekt in de respons')
             }
 
             setSessionToken(createdSessionToken)
             return createdSessionToken
-        } catch {
+        } catch (error) {
+            void logger.error('useAuthStore.createSessionFromDevice failed', error)
             throw new Error('Maken van sessie uit apparaattoken mislukt')
         }
     }
@@ -234,6 +244,10 @@ export const useAuthStore = defineStore('auth', () => {
         }
 
         if (!sessionToken.value) {
+            void logger.error(
+                'useAuthStore.ensureAuthenticatedSession throwing not-authenticated',
+                new TransportklokRequestError('Niet geauthenticeerd', 401),
+            )
             throw new TransportklokRequestError('Niet geauthenticeerd', 401)
         }
     }
@@ -280,11 +294,16 @@ export const useAuthStore = defineStore('auth', () => {
             const currentUser = (await getCurrentUser()) as TransportklokUser | null
 
             if (!currentUser) {
+                void logger.error(
+                    'useAuthStore.fetchUser throwing invalid-result',
+                    new Error('Ongeldige resultaat'),
+                )
                 throw new Error('Ongeldige resultaat')
             }
 
             return currentUser
         } catch (error) {
+            void logger.error('useAuthStore.fetchUser failed', error)
             const status = (error as { status?: number }).status
             throw new TransportklokRequestError('Verzoek mislukt', status || 500)
         }
@@ -297,6 +316,7 @@ export const useAuthStore = defineStore('auth', () => {
             try {
                 await deleteDevice(token)
             } catch (error) {
+                void logger.error('useAuthStore.clearAuth deleteDevice failed', error)
                 const status = (error as { status?: number }).status
 
                 if (status && status !== 404) {
@@ -316,6 +336,12 @@ export const useAuthStore = defineStore('auth', () => {
         }
 
         await clearAuth()
+        void logger.error(
+            'useAuthStore.validateUserRole throwing role-not-allowed',
+            new RoleNotAllowedError(
+                'Medewerkersaccounts zijn niet toegestaan voor tachograafauthenticatie.',
+            ),
+        )
         throw new RoleNotAllowedError(
             'Medewerkersaccounts zijn niet toegestaan voor tachograafauthenticatie.',
         )
@@ -325,19 +351,25 @@ export const useAuthStore = defineStore('auth', () => {
     const refreshSession = async () => {
         isCheckingLogin.value = true
         statusMessage.value = 'Opgeslagen sessie wordt gevalideerd...'
+        let phase = 'start'
 
         try {
+            phase = 'ensureAuthenticatedSession'
             await ensureAuthenticatedSession()
 
             clearPoll()
             pendingToken.value = null
             persistConnectionState()
 
+            phase = 'fetchUser'
             const currentUser = await fetchUser()
+            phase = 'validateUserRole'
             await validateUserRole(currentUser)
             user.value = currentUser
 
+            phase = 'syncDeviceVersion'
             await syncDeviceVersion()
+            phase = 'fleet.setup'
             await fleet.setup()
 
             clearCommunicationIssue()
@@ -345,6 +377,7 @@ export const useAuthStore = defineStore('auth', () => {
             statusMessage.value = 'Verbonden.'
             authState.value = 'ready'
         } catch (error) {
+            void logger.error(`useAuthStore.refreshSession failed at phase=${phase}`, error)
             authState.value = 'needs-login'
 
             if (!networkStore.isOnline) {
@@ -383,6 +416,7 @@ export const useAuthStore = defineStore('auth', () => {
         }
 
         const token = pendingToken.value
+        let phase = 'start'
 
         if (!token) {
             clearPoll()
@@ -390,6 +424,7 @@ export const useAuthStore = defineStore('auth', () => {
         }
 
         try {
+            phase = 'checkAuthenticationToken'
             const result = await checkAuthenticationToken(token)
 
             if (result.error) {
@@ -397,6 +432,10 @@ export const useAuthStore = defineStore('auth', () => {
                     return
                 }
 
+                void logger.error(
+                    'useAuthStore.pollForSession throwing token-check-failed',
+                    new Error(result.message || 'Kan authenticatietoken niet controleren.'),
+                )
                 throw new Error(result.message || 'Kan authenticatietoken niet controleren.')
             }
 
@@ -408,23 +447,33 @@ export const useAuthStore = defineStore('auth', () => {
             statusMessage.value = 'Bevestiging ontvangen, sessie wordt aangemaakt...'
 
             const createdDevicePayload = getCurrentDeviceRegistrationPayload()
+            phase = 'createDevice'
             const createdDeviceToken = await createDevice(createdDevicePayload, token)
 
             if (!createdDeviceToken) {
+                void logger.error(
+                    'useAuthStore.pollForSession throwing missing-device-token',
+                    new Error('Apparaattoken ontbreekt in de respons'),
+                )
                 throw new Error('Apparaattoken ontbreekt in de respons')
             }
 
             setDeviceToken(createdDeviceToken)
+            phase = 'createSessionFromDevice'
             await createSessionFromDevice()
 
             pendingToken.value = null
             persistConnectionState()
 
+            phase = 'fetchUser'
             const currentUser = await fetchUser()
+            phase = 'validateUserRole'
             await validateUserRole(currentUser)
             user.value = currentUser
 
+            phase = 'syncDeviceVersion'
             await syncDeviceVersion()
+            phase = 'fleet.setup'
             await fleet.setup()
 
             clearCommunicationIssue()
@@ -432,6 +481,7 @@ export const useAuthStore = defineStore('auth', () => {
             statusMessage.value = 'Verbonden.'
             authState.value = 'ready'
         } catch (error) {
+            void logger.error(`useAuthStore.pollForSession failed at phase=${phase}`, error)
             statusMessage.value =
                 (error as Error).message || 'Kan authenticatietoken niet controleren.'
         }
@@ -446,6 +496,10 @@ export const useAuthStore = defineStore('auth', () => {
             const response = await requestAuthenticationTokenByWebLogin()
 
             if (response.error || !response.authenticationToken || !response.url) {
+                void logger.error(
+                    'useAuthStore.connect throwing auth-start-failed',
+                    new Error(response.message || 'Kan de aanmelding niet starten.'),
+                )
                 throw new Error(response.message || 'Kan de aanmelding niet starten.')
             }
 
@@ -457,6 +511,7 @@ export const useAuthStore = defineStore('auth', () => {
             statusMessage.value = 'Voltooi de aanmelding in je browser; wij controleren dit automatisch.'
             beginPolling()
         } catch (error) {
+            void logger.error('useAuthStore.connect failed', error)
             statusMessage.value = (error as Error).message || 'Kan de aanmelding niet starten.'
         } finally {
             isRequestingLogin.value = false
@@ -475,6 +530,7 @@ export const useAuthStore = defineStore('auth', () => {
                 await fleet.deleteClient(fleetStore.clientId)
             }
         } catch (error) {
+            void logger.error('useAuthStore.disconnect failed', error)
             console.error('Kon client niet verwijderen', error)
             Notify.create({
                 message: (error as Error).message || 'Kon client niet verwijderen',
