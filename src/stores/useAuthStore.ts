@@ -119,7 +119,6 @@ export const useAuthStore = defineStore('auth', () => {
 
     // Connection state
     const persistConnectionState = () => {
-        console.log('persist', pendingToken.value)
         const state: StoredConnectionState = {}
 
         if (pendingToken.value) {
