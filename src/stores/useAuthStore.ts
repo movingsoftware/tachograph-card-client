@@ -257,10 +257,8 @@ export const useAuthStore = defineStore('auth', () => {
             return false
         }
 
-        const [runtimeSignature, updatePayload] = await Promise.all([
-            getCurrentRuntimeVersionSignature(),
-            getCurrentDeviceVersionUpdatePayload(),
-        ])
+        const runtimeSignature = getCurrentRuntimeVersionSignature()
+        const updatePayload = getCurrentDeviceVersionUpdatePayload()
 
         const storedRuntimeSignature = localStorage.getItem(DEVICE_RUNTIME_SIGNATURE_KEY)
         const storedRuntimeToken = localStorage.getItem(DEVICE_RUNTIME_SIGNATURE_TOKEN_KEY)

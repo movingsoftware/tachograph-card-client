@@ -4,17 +4,30 @@ import type { TrackmijnCard as Card } from 'shared.js'
 import { useFlespiStore } from 'stores/useFlespiStore'
 import { useFleetStore } from 'stores/useFleetStore'
 import {
-    createTachographClient,
+    createTachographCardClient,
     createTachographCompanyCard,
-    deleteTachographClient,
+    deleteTachographCardClient,
     deleteTachographCompanyCard,
-    getTachographClient,
+    getTachographCardClient,
     listTachographCompanyCards,
     updateTachographCompanyCard,
 } from 'src/services/fleet'
 
 const IDENTIFIER_PREFIX = 'TBA'
 const IDENTIFIER_PATTERN = /^TBA\d{13}$/
+
+type FleetApiError = {
+    status?: number
+    code?: string
+    message?: string
+    response?: {
+        status?: number
+        data?: {
+            id?: string
+            message?: string
+        }
+    }
+}
 
 const createClientIdentifier = () => {
     const randomDigits = Array.from({ length: 13 }, () => Math.floor(Math.random() * 10)).join('')
@@ -35,10 +48,16 @@ const toClientIdentifier = (value: string | null) => {
     return `${IDENTIFIER_PREFIX}${digits}`
 }
 
-const getStatus = (error: unknown): number | undefined => {
-    const typed = error as { status?: number; response?: { status?: number } }
-    return typed.status ?? typed.response?.status
+const toFleetApiError = (error: unknown): FleetApiError =>
+    (error && typeof error === 'object' ? error : {}) as FleetApiError
+
+const getErrorStatus = (error: unknown): number | undefined => {
+    const apiError = toFleetApiError(error)
+    return apiError.response?.status ?? apiError.status
 }
+
+const getErrorClientId = (error: unknown): string | undefined =>
+    toFleetApiError(error).response?.data?.id
 
 let cards: Record<string, SmartCard> = {}
 let fleetStore: ReturnType<typeof useFleetStore> | null = null
@@ -76,12 +95,10 @@ const resetClient = () => {
 
 const hasClient = async (id: string): Promise<boolean> => {
     try {
-        await getTachographClient(id)
+        await getTachographCardClient(id)
         return true
     } catch (error) {
-        const status = getStatus(error)
-
-        if (status === 404) {
+        if (getErrorStatus(error) === 404) {
             return false
         }
 
@@ -94,7 +111,7 @@ const createClient = async (): Promise<string> => {
     const identifier = ensureClientIdentifier()
 
     try {
-        const data = await createTachographClient(identifier)
+        const data = await createTachographCardClient(identifier)
 
         if (!data?.id) {
             throw new Error('Kan apparaat-ID van client niet bepalen')
@@ -103,11 +120,11 @@ const createClient = async (): Promise<string> => {
         store.setClientId(data.id)
         return data.id
     } catch (error) {
-        const status = getStatus(error)
-
-        if (status === 409) {
-            if (store.clientId) {
-                return store.clientId
+        if (getErrorStatus(error) === 409) {
+            const existingClientId = getErrorClientId(error)
+            if (existingClientId) {
+                store.setClientId(existingClientId)
+                return existingClientId
             }
 
             throw new Error('Kan apparaat-ID van bestaande client niet bepalen')
@@ -119,12 +136,10 @@ const createClient = async (): Promise<string> => {
 
 const deleteClient = async (id: string): Promise<void> => {
     try {
-        await deleteTachographClient(id)
+        await deleteTachographCardClient(id)
         resetClient()
     } catch (error) {
-        const status = getStatus(error)
-
-        if (status === 404) {
+        if (getErrorStatus(error) === 404) {
             resetClient()
             return
         }
@@ -240,9 +255,7 @@ const updateCard = async (cardId: string, cardData: SmartCard): Promise<void> =>
     try {
         await updateTachographCompanyCard(cardId, payload)
     } catch (error) {
-        const status = getStatus(error)
-
-        if (status === 404) {
+        if (getErrorStatus(error) === 404) {
             return
         }
 
@@ -280,9 +293,7 @@ const createCard = async (number: string, cardData?: SmartCard): Promise<void> =
     try {
         await createTachographCompanyCard(payload)
     } catch (error) {
-        const status = getStatus(error)
-
-        if (status === 409) {
+        if (getErrorStatus(error) === 409) {
             return
         }
 
@@ -326,9 +337,7 @@ const deleteCard = async (number: string, cardId?: string): Promise<void> => {
     try {
         await deleteTachographCompanyCard(resolvedCardId)
     } catch (error) {
-        const status = getStatus(error)
-
-        if (status === 404) {
+        if (getErrorStatus(error) === 404) {
             return
         }
 

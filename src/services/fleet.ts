@@ -1,4 +1,4 @@
-import { createApiService, createFleetService, normalizeApiError } from 'shared.js'
+import { createApiService, createFleetService } from 'shared.js'
 import { communicationEvents } from './communicationEvents'
 import { useNetworkStore } from 'stores/useNetworkStore'
 import { useFleetStore } from 'stores/useFleetStore'
@@ -13,7 +13,6 @@ const { api: fleetApi, setAuthToken: setFleetToken } = createApiService({
     clearSession: () => useFleetStore().clearSession(),
     isOnline: () => useNetworkStore().isOnline,
     timeoutMs: 27000,
-    normalizeError: normalizeApiError,
 })
 
 const fleetService = createFleetService({
@@ -26,6 +25,6 @@ export const listTachographCompanyCards = fleetService.listTachographCompanyCard
 export const createTachographCompanyCard = fleetService.createTachographCompanyCard
 export const updateTachographCompanyCard = fleetService.updateTachographCompanyCard
 export const deleteTachographCompanyCard = fleetService.deleteTachographCompanyCard
-export const getTachographClient = fleetService.getTachographClient
-export const createTachographClient = fleetService.createTachographClient
-export const deleteTachographClient = fleetService.deleteTachographClient
+export const getTachographCardClient = fleetService.getTachographCardClient
+export const createTachographCardClient = fleetService.createTachographCardClient
+export const deleteTachographCardClient = fleetService.deleteTachographCardClient
