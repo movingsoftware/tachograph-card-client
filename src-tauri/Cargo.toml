@@ -1,5 +1,5 @@
 [package]
-name = "tacho-connect"
+name = "tacho-card-client"
 version = "0.0.2"
 description = "Tachograph authentication application"
 authors = ["Shatilo Evgeny"]

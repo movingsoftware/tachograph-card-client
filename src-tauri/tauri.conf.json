@@ -1,6 +1,6 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "TransportKlok: Tachograafkaart Verbinder",
+  "productName": "Tachograafkaart Verbinder",
   "version": "0.0.2",
   "identifier": "com.transportklok.tacho-card-client",
   "build": {
