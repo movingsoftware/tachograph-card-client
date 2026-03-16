@@ -1,8 +1,8 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "TransportKlok Tacho Connect",
+  "productName": "TransportKlok: Tachograafkaart Verbinder",
   "version": "0.0.2",
-  "identifier": "com.transportklok.tachoconnect",
+  "identifier": "com.transportklok.tacho-card-client",
   "build": {
     "frontendDist": "../dist/spa",
     "devUrl": "http://127.0.0.1:8002",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "TransportKlok Tacho Connect",
+        "title": "TransportKlok: Tachograafkaart Verbinder",
         "width": 620,
         "height": 400,
         "decorations": true,

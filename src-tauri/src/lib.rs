@@ -27,7 +27,7 @@ pub fn run() {
 
             if let Some(window) = app.get_webview_window("main") {
                 window
-                    .set_title("TransportKlok: Tacho Connect")
+                    .set_title("TransportKlok: Tachograafkaart Verbinder")
                     .expect("Failed to set window title");
 
                 let front_app_handle = app_handle.clone();
