@@ -2,15 +2,12 @@ import { defineBoot } from '#q-app/wrappers'
 import { setupCommunicationEventListeners } from '../communicationEventListeners'
 import { routeFlow } from '../services/routeFlow'
 
-export default defineBoot(({ router }) => {
-  setupCommunicationEventListeners()
+export default defineBoot(async () => {
+    setupCommunicationEventListeners()
 
-  void (async () => {
     try {
-      await router.isReady()
-      await routeFlow.start('launch')
+        await routeFlow.start('launch')
     } catch (error) {
-      console.error('[RouteFlow] Failed to start launch flow:', error)
+        console.error('[RouteFlow] Failed to start launch flow:', error)
     }
-  })()
 })
