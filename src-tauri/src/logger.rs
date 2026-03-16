@@ -1,4 +1,3 @@
-use std::env;
 use std::path::PathBuf;
 // use std::fs;
 // use std::error::Error; // Импортируем трэйт Error
@@ -9,8 +8,10 @@ use reqwest;
 use serde::Deserialize;
 use sys_info;
 use tauri::async_runtime;
+use tauri::Manager;
 // use tauri::Emitter;
 
+use crate::global_app_handle::get_app_handle;
 use crate::global_app_handle::emit_notification_event;
 use crate::global_app_handle::NotificationPayload;
 
@@ -24,36 +25,19 @@ struct Release {
 /// This function configures the logging system using the `fern` crate. It sets the log file path
 /// based on the operating system and initializes the logging format and level.
 ///
-/// # Platform-specific behavior
-///
-/// * On macOS, the log file is created in the `~/Documents/tba` directory.
-/// * On Windows, the log file is created in the `%USERPROFILE%\Documents\tba` directory.
-///
-
 pub fn setup_logging() {
-    let mut log_path = PathBuf::new();
+    let Some(app_handle) = get_app_handle() else {
+        eprintln!("Failed to initialize logging: app handle is not set");
+        return;
+    };
 
-    #[cfg(target_os = "macos")]
-    {
-        log_path.push(env::var("HOME").unwrap());
-        log_path.push("Documents");
-        log_path.push("TransportKlok");
-        log_path.push("TachoConnect");
-    }
-    #[cfg(target_os = "linux")]
-    {
-        log_path.push(env::var("HOME").unwrap());
-        log_path.push("Documents");
-        log_path.push("TransportKlok");
-        log_path.push("TachoConnect");
-    }
-    #[cfg(target_os = "windows")]
-    {
-        log_path.push(env::var("USERPROFILE").unwrap());
-        log_path.push("Documents");
-        log_path.push("TransportKlok");
-        log_path.push("TachoConnect");
-    }
+    let mut log_path: PathBuf = match app_handle.path().app_data_dir() {
+        Ok(path) => path,
+        Err(e) => {
+            eprintln!("Failed to resolve app_data_dir for logs: {}", e);
+            return;
+        }
+    };
 
     if let Err(e) = std::fs::create_dir_all(&log_path) {
         eprintln!("Failed to create log directory: {}", e);

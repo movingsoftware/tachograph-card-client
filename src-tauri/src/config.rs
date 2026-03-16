@@ -1,6 +1,5 @@
 // ───── Std Lib ─────
 use std::collections::HashMap;
-use std::env;
 use std::error::Error;
 use std::fs;
 use std::fs::File;
@@ -14,9 +13,11 @@ use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
 use serde_yaml;
 use tauri::Emitter;
+use tauri::Manager;
 
 // ───── Local Modules ─────
 use crate::global_app_handle::emit_card_config_event;
+use crate::global_app_handle::get_app_handle;
 use crate::mqtt::remove_connections;
 // use crate::smart_card::manual_sync_cards;
 
@@ -61,31 +62,17 @@ pub struct AppearanceConfig {
 /// Retrieves the configuration file path.
 /// This function constructs the path to the configuration file, creating the necessary directories if they do not exist.
 pub fn get_config_path() -> io::Result<PathBuf> {
-    let mut config_path = PathBuf::new();
+    let app_handle = get_app_handle().ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::Other,
+            "App handle is not initialized; cannot resolve app_data_dir",
+        )
+    })?;
 
-    #[cfg(any(target_os = "linux", target_os = "macos"))]
-    let home_dir = env::var("HOME");
-
-    #[cfg(target_os = "windows")]
-    let home_dir = env::var("USERPROFILE");
-
-    match &home_dir {
-        Ok(home) => {
-            log::debug!("Home directory found: {}", home);
-            config_path.push(home);
-        }
-        Err(e) => {
-            log::error!("Failed to get home directory environment variable: {}", e);
-            return Err(io::Error::new(
-                io::ErrorKind::Other,
-                "Failed to get home directory environment variable",
-            ));
-        }
-    }
-
-    config_path.push("Documents");
-    config_path.push("TransportKlok");
-    config_path.push("TachoConnect");
+    let mut config_path = app_handle
+        .path()
+        .app_data_dir()
+        .map_err(|e| io::Error::new(io::ErrorKind::Other, format!("Failed to resolve app_data_dir: {}", e)))?;
 
     log::debug!("Config directory path resolved to: {:?}", config_path);
 
