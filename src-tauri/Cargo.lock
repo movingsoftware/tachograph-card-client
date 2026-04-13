@@ -4210,7 +4210,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "tacho-connect"
+name = "tacho-card-client"
 version = "0.0.2"
 dependencies = [
  "chrono",
