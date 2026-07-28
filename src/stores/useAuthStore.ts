@@ -331,7 +331,7 @@ export const useAuthStore = defineStore('auth', () => {
     }
 
     const validateUserRole = async (currentUser: TransportklokUser) => {
-        if (currentUser.current_role !== 'employee') {
+        if (currentUser.current_role !== 'worker') {
             return
         }
 
