@@ -74,6 +74,21 @@ ENABLE_NOTARIZE=true
 ```
 Then just run the *build-mac.sh* script which will check for the necessary variables, settings and start building a universal bundle that can run on all Mac architectures (x86 & ARM). The binary file will contain code for both architectures, the required one will be selected for launch.
 
+### In-app updates
+
+The TCC uses the signed Tauri updater for automatic updates. The application only installs an update after the downloaded artifact has been verified with the configured public key. If the updater is not configured, or the feed cannot be reached, the application keeps the existing manual-update flow.
+
+A release build must provide the complete updater trust chain through the environment (normally in the release CI secret store or the local `.env` used by `build-mac.sh`):
+
+```dotenv
+TAURI_UPDATER_ENDPOINT=https://<release-feed-host>/tcc/{{target}}-{{arch}}.json
+TAURI_UPDATER_PUBKEY=<public-key-generated-by-tauri-signer>
+TAURI_SIGNING_PRIVATE_KEY=<private-key-generated-by-tauri-signer>
+TAURI_SIGNING_PRIVATE_KEY_PASSWORD=<private-key-password>
+```
+
+The endpoint must serve Tauri's signed update manifest for every supported target and architecture. The private key is never committed or sent to the application; only the public key is embedded in the release configuration. `build-mac.sh` rejects a partially configured updater so a release cannot accidentally publish unsigned or unverifiable artifacts. The concrete feed host, key material, and CI secret names remain deployment choices and must be supplied by the release pipeline.
+
 If everything went well, you will see something like:
 ```
 🔄 Restoring original configuration

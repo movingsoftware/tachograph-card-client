@@ -410,7 +410,7 @@ export const useAuthStore = defineStore('auth', () => {
             clearPoll()
             statusMessage.value = 'Bevestiging ontvangen, sessie wordt aangemaakt...'
 
-            const createdDevicePayload = getCurrentDeviceRegistrationPayload()
+            const createdDevicePayload = await getCurrentDeviceRegistrationPayload()
             const createdDeviceToken = await createDevice(createdDevicePayload, token)
 
             if (!createdDeviceToken) {

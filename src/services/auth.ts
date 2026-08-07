@@ -42,7 +42,8 @@ export interface TwoFactorChallengePayload {
     recovery_code?: string | null
 }
 
-const applicationKey = (import.meta as { env: Record<string, string> }).env.VITE_APP_KEY || ''
+const applicationKey =
+    (import.meta as { env: Record<string, string> }).env.VITE_APPLICATION_KEY || ''
 
 export const authService = createAuthService({
     applicationKey,

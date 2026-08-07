@@ -1,4 +1,9 @@
-import { createApiService, createFleetService, normalizeApiError } from 'shared.js'
+import {
+    createApiService,
+    createFleetService,
+    normalizeApiError,
+    type SessionRefreshOutcome,
+} from 'shared.js'
 import { communicationEvents } from './communicationEvents'
 import { useNetworkStore } from 'stores/useNetworkStore'
 import { useFleetStore } from 'stores/useFleetStore'
@@ -9,7 +14,11 @@ const FLEET_BASE_URL = (import.meta as { env: Record<string, string> }).env.VITE
 const { api: fleetApi, setAuthToken: setFleetToken } = createApiService({
     baseURL: FLEET_BASE_URL || 'https://api.trackmijn.nl',
     communicationEvents,
-    refreshSession: () => useAuthStore().refreshSessionToken(),
+    refreshSession: async (): Promise<SessionRefreshOutcome> => {
+        const refreshed = await useAuthStore().refreshSessionToken()
+
+        return refreshed ? 'success' : 'unauthorized'
+    },
     getSessionToken: () => useFleetStore().token,
     clearSession: () => useFleetStore().clearAuth(),
     isOnline: () => useNetworkStore().isOnline,
@@ -27,6 +36,6 @@ export const listTachographCompanyCards = fleetService.listTachographCompanyCard
 export const createTachographCompanyCard = fleetService.createTachographCompanyCard
 export const updateTachographCompanyCard = fleetService.updateTachographCompanyCard
 export const deleteTachographCompanyCard = fleetService.deleteTachographCompanyCard
-export const getTachographClient = fleetService.getTachographClient
-export const createTachographClient = fleetService.createTachographClient
-export const deleteTachographClient = fleetService.deleteTachographClient
+export const getTachographClient = fleetService.getTachographCardClient
+export const createTachographClient = fleetService.createTachographCardClient
+export const deleteTachographClient = fleetService.deleteTachographCardClient

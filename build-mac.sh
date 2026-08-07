@@ -75,14 +75,46 @@ else
     echo "   • ENABLE_NOTARIZE: $ENABLE_NOTARIZE (notarization disabled)"
 fi
 
+if [ -n "$TAURI_UPDATER_ENDPOINT" ] || [ -n "$TAURI_UPDATER_PUBKEY" ]; then
+    echo "   • Tauri updater: release feed configuration supplied"
+else
+    echo "   • Tauri updater: not configured (manual update fallback)"
+fi
+
 echo ""
 
+# The updater must be configured as one complete trust chain. The endpoint is
+# public, while the private signing key is consumed by Tauri from the environment.
+if [ -n "$TAURI_UPDATER_ENDPOINT" ] || [ -n "$TAURI_UPDATER_PUBKEY" ]; then
+    if [ -z "$TAURI_UPDATER_ENDPOINT" ] || [ -z "$TAURI_UPDATER_PUBKEY" ]; then
+        echo "❌ Both TAURI_UPDATER_ENDPOINT and TAURI_UPDATER_PUBKEY are required together."
+        exit 1
+    fi
+
+    if [ -z "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+        echo "❌ TAURI_SIGNING_PRIVATE_KEY is required when the Tauri updater is enabled."
+        exit 1
+    fi
+
+    # TAURI_CONFIG is merged by the Tauri CLI and avoids committing a feed URL
+    # or verification key to the source configuration.
+    export TAURI_CONFIG="$(node --input-type=module -e '
+const endpoint = process.env.TAURI_UPDATER_ENDPOINT
+const pubkey = process.env.TAURI_UPDATER_PUBKEY
+
+process.stdout.write(JSON.stringify({
+  bundle: { createUpdaterArtifacts: true },
+  plugins: { updater: { endpoints: [endpoint], pubkey } },
+}))
+')"
+fi
+
 # Modify the Tauri configuration file temporarily
-TAURI_CONFIG="./src-tauri/tauri.conf.json"
-TAURI_CONFIG_BACKUP="${TAURI_CONFIG}.bak"
+TAURI_CONFIG_FILE="./src-tauri/tauri.conf.json"
+TAURI_CONFIG_BACKUP="${TAURI_CONFIG_FILE}.bak"
 
 # Create a backup of the original config
-cp "$TAURI_CONFIG" "$TAURI_CONFIG_BACKUP"
+cp "$TAURI_CONFIG_FILE" "$TAURI_CONFIG_BACKUP"
 
 # Set universal architecture
 echo "🔧 Setting up for universal build (Intel + Apple Silicon)"
@@ -93,7 +125,7 @@ if [ -n "$APPLE_IDENTITY" ] && [ -n "$APPLE_TEAM_ID" ]; then
     echo "🔧 Updating Tauri configuration with actual values"
     
     # Read the JSON content
-    CONFIG_CONTENT=$(cat "$TAURI_CONFIG")
+    CONFIG_CONTENT=$(cat "$TAURI_CONFIG_FILE")
     
     # Replace environment variables with actual values
     CONFIG_CONTENT=${CONFIG_CONTENT//@env:APPLE_IDENTITY/$APPLE_IDENTITY}
@@ -105,7 +137,7 @@ if [ -n "$APPLE_IDENTITY" ] && [ -n "$APPLE_TEAM_ID" ]; then
     fi
     
     # Write the updated config back
-    echo "$CONFIG_CONTENT" > "$TAURI_CONFIG"
+    echo "$CONFIG_CONTENT" > "$TAURI_CONFIG_FILE"
     echo "✅ Updated configuration for universal build"
     
 else
@@ -120,7 +152,7 @@ BUILD_RESULT=$?
 
 # Restore the original config
 echo "🔄 Restoring original configuration"
-mv "$TAURI_CONFIG_BACKUP" "$TAURI_CONFIG"
+mv "$TAURI_CONFIG_BACKUP" "$TAURI_CONFIG_FILE"
 
 if [ $BUILD_RESULT -eq 0 ]; then
     echo "✅ Build completed successfully!"
