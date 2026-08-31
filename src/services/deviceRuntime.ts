@@ -1,7 +1,20 @@
 import type { DeviceRegistrationPayload, UpdateDevicePayload } from './auth'
+import { getVersion } from '@tauri-apps/api/app'
 import { platform } from '@tauri-apps/plugin-os'
 
-const BUNDLED_APP_VERSION = import.meta.env.VITE_APP_VERSION
+const FALLBACK_APP_VERSION = '0.0.1'
+
+const resolveNativeApplicationVersion = async (): Promise<string> => {
+    if (import.meta.env.VITE_APP_VERSION) {
+        return import.meta.env.VITE_APP_VERSION
+    }
+
+    try {
+        return await getVersion()
+    } catch {
+        return FALLBACK_APP_VERSION
+    }
+}
 
 type RuntimeVersionSnapshot = {
     applicationVersion: string
@@ -9,10 +22,10 @@ type RuntimeVersionSnapshot = {
     signature: string
 }
 
-const getRuntimeVersionSnapshot = (): RuntimeVersionSnapshot => {
+const getRuntimeVersionSnapshot = async (): Promise<RuntimeVersionSnapshot> => {
     const nav = typeof navigator === 'undefined' ? undefined : navigator
-    const nativeApplicationVersion = BUNDLED_APP_VERSION
-    const applicationVersion = BUNDLED_APP_VERSION || nativeApplicationVersion
+    const nativeApplicationVersion = await resolveNativeApplicationVersion()
+    const applicationVersion = nativeApplicationVersion
     const platform = nav?.platform || 'desktop'
     const userAgent = nav?.userAgent || 'unknown'
     const signature = `${platform}:${applicationVersion}:${nativeApplicationVersion}:${userAgent}`
@@ -24,9 +37,9 @@ const getRuntimeVersionSnapshot = (): RuntimeVersionSnapshot => {
     }
 }
 
-export const getCurrentDeviceRegistrationPayload = (): DeviceRegistrationPayload => {
+export const getCurrentDeviceRegistrationPayload = async (): Promise<DeviceRegistrationPayload> => {
     const nav = typeof navigator === 'undefined' ? undefined : navigator
-    const runtime = getRuntimeVersionSnapshot()
+    const runtime = await getRuntimeVersionSnapshot()
 
     return {
         device_manufacturer: nav?.vendor || 'desktop-client',
@@ -38,9 +51,9 @@ export const getCurrentDeviceRegistrationPayload = (): DeviceRegistrationPayload
     }
 }
 
-export const getCurrentDeviceVersionUpdatePayload = (): UpdateDevicePayload => {
+export const getCurrentDeviceVersionUpdatePayload = async (): Promise<UpdateDevicePayload> => {
     const nav = typeof navigator === 'undefined' ? undefined : navigator
-    const runtime = getRuntimeVersionSnapshot()
+    const runtime = await getRuntimeVersionSnapshot()
 
     return {
         name: nav?.userAgent || 'TransportKlok Desktop',
@@ -49,7 +62,7 @@ export const getCurrentDeviceVersionUpdatePayload = (): UpdateDevicePayload => {
     }
 }
 
-export const getCurrentRuntimeVersionSignature = () => {
-    const runtime = getRuntimeVersionSnapshot()
+export const getCurrentRuntimeVersionSignature = async (): Promise<string> => {
+    const runtime = await getRuntimeVersionSnapshot()
     return runtime.signature
 }

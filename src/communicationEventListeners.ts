@@ -1,9 +1,13 @@
 import { communicationEvents } from './services/communicationEvents'
 import { routeFlow } from './services/routeFlow'
 import { getCurrentPath, navigateTo } from './services/routerNavigation'
+import { checkAndApplyApplicationUpdate } from './services/applicationUpdate'
+import { useAppStatusStore } from 'shared.js'
+import { useAuthStore } from './stores/useAuthStore'
 
 let initialized = false
 let teardownHandlers: Array<() => void> = []
+let outdatedFlowStarted = false
 
 export const setupCommunicationEventListeners = () => {
   if (initialized) return
@@ -27,7 +31,22 @@ export const setupCommunicationEventListeners = () => {
     })
   })
 
-  const offOutdated = communicationEvents.on('outdated', async () => {
+  const offOutdated = communicationEvents.on('outdated', async (payload) => {
+    const { onRecovered } = payload
+    const updateResult = await checkAndApplyApplicationUpdate()
+
+    if (updateResult.status === 'updated') {
+      await useAuthStore().syncDeviceVersion()
+      useAppStatusStore().clearIssue()
+      await onRecovered?.()
+      return
+    }
+
+    if (outdatedFlowStarted) {
+      return
+    }
+
+    outdatedFlowStarted = true
     routeFlow.clear()
     await routeFlow.start('outdated', {
       onComplete: async () => {
@@ -70,4 +89,5 @@ export const teardownCommunicationEventListeners = () => {
   teardownHandlers.forEach((teardown) => teardown())
   teardownHandlers = []
   initialized = false
+  outdatedFlowStarted = false
 }
