@@ -9,7 +9,7 @@ const FLEET_BASE_URL = (import.meta as { env: Record<string, string> }).env.VITE
 const { api: fleetApi, setAuthToken: setFleetToken } = createApiService({
     baseURL: FLEET_BASE_URL || 'https://api.trackmijn.nl',
     communicationEvents,
-    refreshSession: () => useAuthStore().refreshSessionToken(),
+    refreshSession: async () => ((await useAuthStore().refreshSessionToken()) ? 'success' : 'unauthorized'),
     getSessionToken: () => useFleetStore().token,
     clearSession: () => useFleetStore().clearAuth(),
     isOnline: () => useNetworkStore().isOnline,
