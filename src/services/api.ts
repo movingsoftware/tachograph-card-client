@@ -13,7 +13,7 @@ const { api, setAuthToken } = createApiService({
     getSessionToken: () => useAuthStore().sessionToken,
     clearSession: () => useAuthStore().clearSession(),
     isOnline: () => useNetworkStore().isOnline,
-    refreshSession: () => useAuthStore().refreshSessionToken(),
+    refreshSession: async () => ((await useAuthStore().refreshSessionToken()) ? 'success' : 'unauthorized'),
 })
 
 export { setAuthToken }

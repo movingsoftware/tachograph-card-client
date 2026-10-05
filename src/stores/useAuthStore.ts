@@ -10,6 +10,7 @@ import {
     requestAuthenticationTokenByWebLogin,
     updateDevice,
 } from '../services/auth'
+import { persistSecret, readSecret } from '../services/secureStore'
 import { setAuthToken } from '../services/api'
 import { useFleet } from '../composables/useFleet'
 import { useFlespiStore } from './useFlespiStore'
@@ -34,7 +35,8 @@ type TransportklokUser = {
 }
 
 type StoredConnectionState = {
-    pendingToken?: string
+    pendingToken: string
+    startedAt: number
 }
 
 const POLL_INTERVAL_MS = 5000
@@ -44,6 +46,13 @@ const DEVICE_TOKEN_KEY = 'transportklok_device_token'
 const SESSION_TOKEN_KEY = 'transportklok_session_token'
 const DEVICE_RUNTIME_SIGNATURE_KEY = 'transportklok_device_runtime_signature'
 const DEVICE_RUNTIME_SIGNATURE_TOKEN_KEY = 'transportklok_device_runtime_signature_device_token'
+
+// The runtime signature remembers which device token it belongs to without keeping the token itself.
+const tokenFingerprint = async (token: string): Promise<string> => {
+    const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(token))
+
+    return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('')
+}
 
 class RoleNotAllowedError extends Error {
     constructor(message: string) {
@@ -73,8 +82,8 @@ export const useAuthStore = defineStore('auth', () => {
     const authState = ref<'loading' | 'needs-login' | 'ready'>('loading')
     const statusMessage = ref('Sessie wordt gecontroleerd...')
     const user = ref<TransportklokUser | null>(null)
-    const deviceToken = ref<string | null>(localStorage.getItem(DEVICE_TOKEN_KEY))
-    const sessionToken = ref<string | null>(localStorage.getItem(SESSION_TOKEN_KEY))
+    const deviceToken = ref<string | null>(null)
+    const sessionToken = ref<string | null>(null)
     const pendingToken = ref<string | null>(null)
     const pollInterval = ref<number | undefined>(undefined)
     const pollStartedAt = ref<number | null>(null)
@@ -84,18 +93,15 @@ export const useAuthStore = defineStore('auth', () => {
 
     let focusCheckPromise: Promise<void> | null = null
 
-    setAuthToken(sessionToken.value)
-
     // Session token state
     const setDeviceToken = (token: string | null) => {
         deviceToken.value = token
+        persistSecret(DEVICE_TOKEN_KEY, token)
 
         if (token) {
-            localStorage.setItem(DEVICE_TOKEN_KEY, token)
             return
         }
 
-        localStorage.removeItem(DEVICE_TOKEN_KEY)
         localStorage.removeItem(DEVICE_RUNTIME_SIGNATURE_KEY)
         localStorage.removeItem(DEVICE_RUNTIME_SIGNATURE_TOKEN_KEY)
     }
@@ -104,13 +110,7 @@ export const useAuthStore = defineStore('auth', () => {
         sessionToken.value = token
         fleetStore.setSessionToken(token)
         setAuthToken(token)
-
-        if (token) {
-            localStorage.setItem(SESSION_TOKEN_KEY, token)
-            return
-        }
-
-        localStorage.removeItem(SESSION_TOKEN_KEY)
+        persistSecret(SESSION_TOKEN_KEY, token)
     }
 
     const clearSession = () => {
@@ -120,40 +120,52 @@ export const useAuthStore = defineStore('auth', () => {
 
     // Connection state
     const persistConnectionState = () => {
-        console.log('persist', pendingToken.value)
-        const state: StoredConnectionState = {}
-
-        if (pendingToken.value) {
-            state.pendingToken = pendingToken.value
-        }
-
-        if (state.pendingToken) {
-            localStorage.setItem(CONNECTION_STATE_KEY, JSON.stringify(state))
+        if (pendingToken.value && pollStartedAt.value !== null) {
+            const state: StoredConnectionState = {
+                pendingToken: pendingToken.value,
+                startedAt: pollStartedAt.value,
+            }
+            persistSecret(CONNECTION_STATE_KEY, JSON.stringify(state))
             return
         }
 
-        localStorage.removeItem(CONNECTION_STATE_KEY)
+        persistSecret(CONNECTION_STATE_KEY, null)
+        pollStartedAt.value = null
     }
 
-    const restoreConnectionState = () => {
-        const raw = localStorage.getItem(CONNECTION_STATE_KEY)
+    const restoreConnectionState = async () => {
+        const raw = await readSecret(CONNECTION_STATE_KEY)
 
         if (!raw) {
             return
         }
 
         try {
-            const parsed = JSON.parse(raw) as StoredConnectionState
+            const parsed: unknown = JSON.parse(raw)
 
-            if (!parsed.pendingToken) {
+            if (
+                typeof parsed !== 'object' ||
+                parsed === null ||
+                !('pendingToken' in parsed) ||
+                typeof parsed.pendingToken !== 'string' ||
+                parsed.pendingToken.length === 0 ||
+                !('startedAt' in parsed) ||
+                typeof parsed.startedAt !== 'number' ||
+                !Number.isFinite(parsed.startedAt) ||
+                parsed.startedAt > Date.now() ||
+                Date.now() - parsed.startedAt >= MAX_POLL_DURATION_MS
+            ) {
+                persistSecret(CONNECTION_STATE_KEY, null)
                 return
             }
 
             pendingToken.value = parsed.pendingToken
+            pollStartedAt.value = parsed.startedAt
             statusMessage.value = 'Eerder aangevraagde authenticatie wordt gecontroleerd...'
             authState.value = 'needs-login'
             beginPolling()
         } catch (error) {
+            persistSecret(CONNECTION_STATE_KEY, null)
             console.warn('Kon opgeslagen verbindingsstatus niet herstellen', error)
         }
     }
@@ -179,7 +191,6 @@ export const useAuthStore = defineStore('auth', () => {
             pollInterval.value = undefined
         }
 
-        pollStartedAt.value = null
     }
 
     const beginPolling = () => {
@@ -187,7 +198,9 @@ export const useAuthStore = defineStore('auth', () => {
             return
         }
 
-        pollStartedAt.value = Date.now()
+        if (pollStartedAt.value === null) {
+            pollStartedAt.value = Date.now()
+        }
         pollInterval.value = window.setInterval(() => {
             void pollForSession()
         }, POLL_INTERVAL_MS)
@@ -264,7 +277,8 @@ export const useAuthStore = defineStore('auth', () => {
 
         const storedRuntimeSignature = localStorage.getItem(DEVICE_RUNTIME_SIGNATURE_KEY)
         const storedRuntimeToken = localStorage.getItem(DEVICE_RUNTIME_SIGNATURE_TOKEN_KEY)
-        const tokenChanged = storedRuntimeToken !== deviceToken.value
+        const currentTokenFingerprint = await tokenFingerprint(deviceToken.value)
+        const tokenChanged = storedRuntimeToken !== currentTokenFingerprint
         const signatureChanged = storedRuntimeSignature !== runtimeSignature
 
         if (!tokenChanged && !signatureChanged) {
@@ -273,7 +287,7 @@ export const useAuthStore = defineStore('auth', () => {
 
         await updateDevice(deviceToken.value, updatePayload)
         localStorage.setItem(DEVICE_RUNTIME_SIGNATURE_KEY, runtimeSignature)
-        localStorage.setItem(DEVICE_RUNTIME_SIGNATURE_TOKEN_KEY, deviceToken.value)
+        localStorage.setItem(DEVICE_RUNTIME_SIGNATURE_TOKEN_KEY, currentTokenFingerprint)
 
         return true
     }
@@ -454,6 +468,8 @@ export const useAuthStore = defineStore('auth', () => {
         isRequestingLogin.value = true
         statusMessage.value = 'Authenticatie wordt aangevraagd...'
         clearPoll()
+        pendingToken.value = null
+        persistConnectionState()
 
         try {
             const response = await requestAuthenticationTokenByWebLogin()
@@ -463,6 +479,7 @@ export const useAuthStore = defineStore('auth', () => {
             }
 
             pendingToken.value = response.authenticationToken
+            pollStartedAt.value = Date.now()
             persistConnectionState()
 
             await openUrl(response.url)
@@ -503,8 +520,16 @@ export const useAuthStore = defineStore('auth', () => {
         }
     }
 
+    const restoreSecrets = async () => {
+        deviceToken.value = await readSecret(DEVICE_TOKEN_KEY)
+        sessionToken.value = await readSecret(SESSION_TOKEN_KEY)
+        setAuthToken(sessionToken.value)
+        await fleetStore.restoreToken()
+    }
+
     const initializeConnection = async () => {
-        restoreConnectionState()
+        await restoreSecrets()
+        await restoreConnectionState()
         await refreshSession()
     }
 

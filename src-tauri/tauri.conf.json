@@ -40,6 +40,15 @@
       "signingIdentity": "Developer ID Application: KoeriersKlok (9UHZ3723YU)",
       "providerShortName": "9UHZ3723YU",
       "entitlements": "entitlements.plist"
+    },
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDNEQTUyNTQ3Q0I4MUM1RUYKUldUdnhZSExSeVdsUFMxUytFZktqdHRxbVg3aE1nRnFQTFNMMWZGdUhFc0RkNHIyYk43ZmtlZnYK",
+      "endpoints": [
+        "https://github.com/movingsoftware/tachograph-card-client/releases/latest/download/latest.json"
+      ]
     }
   }
 }

@@ -5,6 +5,7 @@ mod config; // Configuration handling.
 mod global_app_handle;
 mod logger; // Logging functionality.
 mod mqtt; // MQTT communication.
+mod secure_store; // OS credential store for bearer tokens.
 mod smart_card; // PCSC module for smart card operations. // Global access to app state and emitters.
 
 // ───── External Crates ─────
@@ -15,6 +16,8 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .setup(move |app| {
             // Obtain a lightweight reference to the app for convenient interaction
             let app_handle = app.app_handle();
@@ -100,6 +103,9 @@ pub fn run() {
             config::remove_card,           // remove card from config
             smart_card::manual_sync_cards, // manual sync cards from the frontend
             app_connect::app_connection,   // App connection to the MQTT broker
+            secure_store::secure_store_get,
+            secure_store::secure_store_set,
+            secure_store::secure_store_remove,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
