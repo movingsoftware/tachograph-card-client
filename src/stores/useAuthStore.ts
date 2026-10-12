@@ -10,13 +10,14 @@ import {
     requestAuthenticationTokenByWebLogin,
     updateDevice,
 } from '../services/auth'
-import { setAuthToken } from '../services/api'
 import { useFleet } from '../composables/useFleet'
 import { useFlespiStore } from './useFlespiStore'
 import { useFleetStore } from './useFleetStore'
 import { useCommunicationStore } from 'shared.js'
 import { useAppStatusStore } from 'shared.js'
 import { useNetworkStore } from './useNetworkStore'
+import { useFleetAuthStore } from './useFleetAuthStore'
+import { classifyApiError, createAuthSession, getApiErrorStatus, AuthSessionInvalidatedError } from 'shared.js'
 import {
     getCurrentDeviceRegistrationPayload,
     getCurrentDeviceVersionUpdatePayload,
@@ -82,12 +83,24 @@ export const useAuthStore = defineStore('auth', () => {
     const isCheckingLogin = ref(false)
     const isConnected = computed(() => authState.value === 'ready')
 
-    let focusCheckPromise: Promise<void> | null = null
+    const isDisconnecting = ref(false)
 
-    setAuthToken(sessionToken.value)
+    let focusCheckPromise: Promise<void> | null = null
+    let connectionGeneration = 0
+    let pollInProgress = false
+
+    const assertConnectionCurrent = (generation: number) => {
+        if (generation !== connectionGeneration) {
+            throw new AuthSessionInvalidatedError()
+        }
+    }
 
     // Session token state
     const setDeviceToken = (token: string | null) => {
+        if (token !== deviceToken.value) {
+            authSession.invalidate()
+            useFleetAuthStore().authSession.invalidate()
+        }
         deviceToken.value = token
 
         if (token) {
@@ -102,8 +115,6 @@ export const useAuthStore = defineStore('auth', () => {
 
     const setSessionToken = (token: string | null) => {
         sessionToken.value = token
-        fleetStore.setSessionToken(token)
-        setAuthToken(token)
 
         if (token) {
             localStorage.setItem(SESSION_TOKEN_KEY, token)
@@ -113,14 +124,30 @@ export const useAuthStore = defineStore('auth', () => {
         localStorage.removeItem(SESSION_TOKEN_KEY)
     }
 
-    const clearSession = () => {
-        setSessionToken(null)
-        user.value = null
-    }
+    const authSession = createAuthSession({
+        getToken: () => sessionToken.value,
+        getContext: () => deviceToken.value,
+        issue: async () => {
+            if (isDisconnecting.value) {
+                throw new AuthSessionInvalidatedError()
+            }
+            const context = requireDeviceToken()
+            const token = await createSession(context)
+            return { token, context }
+        },
+        store: (credential) => setSessionToken(credential.token),
+        clear: () => {
+            setSessionToken(null)
+            user.value = null
+            authState.value = 'needs-login'
+        },
+        isUnauthorized: (error) => getApiErrorStatus(error) === 401,
+    })
+
+    const clearSession = () => authSession.invalidate()
 
     // Connection state
     const persistConnectionState = () => {
-        console.log('persist', pendingToken.value)
         const state: StoredConnectionState = {}
 
         if (pendingToken.value) {
@@ -212,89 +239,64 @@ export const useAuthStore = defineStore('auth', () => {
         return deviceToken.value
     }
 
-    const createSessionFromDevice = async (): Promise<string> => {
-        const token = requireDeviceToken()
-
-        try {
-            const createdSessionToken = await createSession(token)
-
-            if (!createdSessionToken) {
-                throw new Error('Sessietoken ontbreekt in de respons')
-            }
-
-            setSessionToken(createdSessionToken)
-            return createdSessionToken
-        } catch {
-            throw new Error('Maken van sessie uit apparaattoken mislukt')
-        }
+    const createSessionFromDevice = async (): Promise<void> => {
+        await authSession.refresh()
     }
 
     const ensureAuthenticatedSession = async () => {
-        if (!sessionToken.value && deviceToken.value) {
-            await createSessionFromDevice()
-        }
-
-        if (!sessionToken.value) {
-            throw new TransportklokRequestError('Niet geauthenticeerd', 401)
-        }
-    }
-
-    const refreshSessionToken = async (): Promise<boolean> => {
-        if (!deviceToken.value) {
-            return false
-        }
-
-        try {
-            await createSessionFromDevice()
-            return true
-        } catch {
-            return false
-        }
+        await authSession.ensure()
     }
 
     const syncDeviceVersion = async () => {
-        if (!deviceToken.value) {
+        const capturedToken = deviceToken.value
+        if (!capturedToken) {
             return false
+        }
+
+        const generation = connectionGeneration
+        const snapshot = authSession.snapshot()
+        const assertCurrent = (): void => {
+            assertConnectionCurrent(generation)
+            authSession.assertCurrent(snapshot)
         }
 
         const [runtimeSignature, updatePayload] = await Promise.all([
             getCurrentRuntimeVersionSignature(),
             getCurrentDeviceVersionUpdatePayload(),
         ])
+        assertCurrent()
 
         const storedRuntimeSignature = localStorage.getItem(DEVICE_RUNTIME_SIGNATURE_KEY)
         const storedRuntimeToken = localStorage.getItem(DEVICE_RUNTIME_SIGNATURE_TOKEN_KEY)
-        const tokenChanged = storedRuntimeToken !== deviceToken.value
+        const tokenChanged = storedRuntimeToken !== capturedToken
         const signatureChanged = storedRuntimeSignature !== runtimeSignature
 
         if (!tokenChanged && !signatureChanged) {
             return false
         }
 
-        await updateDevice(deviceToken.value, updatePayload)
+        await updateDevice(capturedToken, updatePayload)
+        assertCurrent()
         localStorage.setItem(DEVICE_RUNTIME_SIGNATURE_KEY, runtimeSignature)
-        localStorage.setItem(DEVICE_RUNTIME_SIGNATURE_TOKEN_KEY, deviceToken.value)
+        localStorage.setItem(DEVICE_RUNTIME_SIGNATURE_TOKEN_KEY, capturedToken)
 
         return true
     }
 
     const fetchUser = async (): Promise<TransportklokUser> => {
-        try {
-            const currentUser = (await getCurrentUser()) as TransportklokUser | null
-
-            if (!currentUser) {
-                throw new Error('Ongeldige resultaat')
-            }
-
-            return currentUser
-        } catch (error) {
-            const status = (error as { status?: number }).status
-            throw new TransportklokRequestError('Verzoek mislukt', status || 500)
+        const currentUser = (await getCurrentUser()) as TransportklokUser | null
+        if (!currentUser) {
+            throw new Error('Ongeldig gebruikersresultaat')
         }
+        return currentUser
     }
 
     const clearAuth = async () => {
+        connectionGeneration += 1
         const token = deviceToken.value
+        authSession.invalidate()
+        fleet.clearAuth()
+        setDeviceToken(null)
 
         if (token) {
             try {
@@ -307,10 +309,6 @@ export const useAuthStore = defineStore('auth', () => {
                 }
             }
         }
-
-        setDeviceToken(null)
-        setSessionToken(null)
-        fleet.clearAuth()
     }
 
     const validateUserRole = async (currentUser: TransportklokUser) => {
@@ -326,20 +324,26 @@ export const useAuthStore = defineStore('auth', () => {
 
     // Flows
     const refreshSession = async () => {
+        const generation = connectionGeneration
         isCheckingLogin.value = true
         statusMessage.value = 'Opgeslagen sessie wordt gevalideerd...'
 
         try {
             await ensureAuthenticatedSession()
+            assertConnectionCurrent(generation)
             const currentUser = await fetchUser()
+            assertConnectionCurrent(generation)
 
             console.log('validate user')
             await validateUserRole(currentUser)
+            assertConnectionCurrent(generation)
             user.value = currentUser
             console.log('sync version')
             await syncDeviceVersion()
+            assertConnectionCurrent(generation)
             console.log('ensure fleet')
             await fleet.ensureSetup()
+            assertConnectionCurrent(generation)
 
             console.log('clear comm')
 
@@ -351,7 +355,11 @@ export const useAuthStore = defineStore('auth', () => {
             pendingToken.value = null
             persistConnectionState()
         } catch (error) {
-            authState.value = 'needs-login'
+            if (generation !== connectionGeneration && !(error instanceof RoleNotAllowedError)) return
+            const status = getApiErrorStatus(error)
+            authState.value = error instanceof RoleNotAllowedError || !deviceToken.value || status === 401
+                ? 'needs-login'
+                : 'loading'
 
             if (!networkStore.isOnline) {
                 markIssueOffline()
@@ -375,6 +383,7 @@ export const useAuthStore = defineStore('auth', () => {
     }
 
     const pollForSession = async () => {
+        if (pollInProgress) return
         if (pollStartedAt.value && Date.now() - pollStartedAt.value > MAX_POLL_DURATION_MS) {
             clearPoll()
             isRequestingLogin.value = false
@@ -392,8 +401,11 @@ export const useAuthStore = defineStore('auth', () => {
             return
         }
 
+        const generation = connectionGeneration
+        pollInProgress = true
         try {
             const result = await checkAuthenticationToken(token)
+            assertConnectionCurrent(generation)
 
             if (result.error) {
                 if (result.status === 404) {
@@ -412,6 +424,7 @@ export const useAuthStore = defineStore('auth', () => {
 
             const createdDevicePayload = getCurrentDeviceRegistrationPayload()
             const createdDeviceToken = await createDevice(createdDevicePayload, token)
+            assertConnectionCurrent(generation)
 
             if (!createdDeviceToken) {
                 throw new Error('Apparaattoken ontbreekt in de respons')
@@ -420,19 +433,24 @@ export const useAuthStore = defineStore('auth', () => {
             console.log('set token')
             setDeviceToken(createdDeviceToken)
             await createSessionFromDevice()
+            assertConnectionCurrent(generation)
 
             console.log('get user')
             const currentUser = await fetchUser()
+            assertConnectionCurrent(generation)
 
             console.log('validate user role')
             await validateUserRole(currentUser)
+            assertConnectionCurrent(generation)
             user.value = currentUser
 
             console.log('sync device version')
             await syncDeviceVersion()
+            assertConnectionCurrent(generation)
 
             console.log('ensure fleet setup')
             await fleet.ensureSetup()
+            assertConnectionCurrent(generation)
 
             console.log('clear comm')
 
@@ -445,18 +463,24 @@ export const useAuthStore = defineStore('auth', () => {
             statusMessage.value = 'Verbonden.'
             authState.value = 'ready'
         } catch (error) {
+            if (generation !== connectionGeneration && !(error instanceof RoleNotAllowedError)) return
             statusMessage.value =
                 (error as Error).message || 'Kan authenticatietoken niet controleren.'
+        } finally {
+            pollInProgress = false
         }
     }
 
     const connect = async () => {
+        if (isDisconnecting.value || isRequestingLogin.value) return
+        const generation = ++connectionGeneration
         isRequestingLogin.value = true
         statusMessage.value = 'Authenticatie wordt aangevraagd...'
         clearPoll()
 
         try {
             const response = await requestAuthenticationTokenByWebLogin()
+            assertConnectionCurrent(generation)
 
             if (response.error || !response.authenticationToken || !response.url) {
                 throw new Error(response.message || 'Kan de aanmelding niet starten.')
@@ -466,10 +490,12 @@ export const useAuthStore = defineStore('auth', () => {
             persistConnectionState()
 
             await openUrl(response.url)
+            assertConnectionCurrent(generation)
 
             statusMessage.value = 'Voltooi de aanmelding in je browser; wij controleren dit automatisch.'
             beginPolling()
         } catch (error) {
+            if (generation !== connectionGeneration) return
             statusMessage.value = (error as Error).message || 'Kan de aanmelding niet starten.'
         } finally {
             isRequestingLogin.value = false
@@ -477,29 +503,36 @@ export const useAuthStore = defineStore('auth', () => {
     }
 
     const disconnect = async () => {
+        connectionGeneration += 1
+        isDisconnecting.value = true
+        authSession.cancelPending()
+        useFleetAuthStore().authSession.cancelPending()
         clearPoll()
         user.value = null
         pendingToken.value = null
         persistConnectionState()
 
         try {
-            if (fleetStore.clientId) {
+            if (fleetStore.clientId && useFleetAuthStore().token) {
                 statusMessage.value = 'Verbinding wordt verbroken...'
                 await fleet.deleteClient(fleetStore.clientId)
             }
         } catch (error) {
-            console.error('Kon client niet verwijderen', error)
-            Notify.create({
-                message: (error as Error).message || 'Kon client niet verwijderen',
-                color: 'negative',
-                position: 'bottom',
-            })
+            if (classifyApiError(error, networkStore.isOnline) !== 'cancelled') {
+                console.error('Kon client niet verwijderen', error)
+                Notify.create({
+                    message: (error as Error).message || 'Kon client niet verwijderen',
+                    color: 'negative',
+                    position: 'bottom',
+                })
+            }
         } finally {
             await clearAuth()
             communicationStore.clearIssue()
             persistConnectionState()
             authState.value = 'needs-login'
             statusMessage.value = 'Niet verbonden.'
+            isDisconnecting.value = false
         }
     }
 
@@ -547,7 +580,8 @@ export const useAuthStore = defineStore('auth', () => {
         clearSession,
         clearAuth,
         refreshSession,
-        refreshSessionToken,
+        authSession,
+        isDisconnecting,
         syncDeviceVersion,
         resumePollingIfPending,
         pausePolling,

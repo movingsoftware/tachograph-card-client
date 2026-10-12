@@ -2,6 +2,7 @@
 // https://v2.quasar.dev/quasar-cli-vite/quasar-config-file
 
 import { defineConfig } from '#q-app/wrappers'
+import packageJson from './package.json'
 
 export default defineConfig((/* ctx */) => {
   return {
@@ -11,7 +12,7 @@ export default defineConfig((/* ctx */) => {
     // app boot file (/src/boot)
     // --> boot files are part of "main.js"
     // https://v2.quasar.dev/quasar-cli-vite/boot-files
-    boot: ['pinia', 'route-flow'],
+    boot: ['pinia', 'bundle-updates', 'route-flow'],
 
     // https://v2.quasar.dev/quasar-cli-vite/quasar-config-file#css
     css: ['app.scss'],
@@ -32,6 +33,17 @@ export default defineConfig((/* ctx */) => {
 
     // Full list of options: https://v2.quasar.dev/quasar-cli-vite/quasar-config-file#build
     build: {
+      env: {
+        ...Object.fromEntries(
+            [
+                'VITE_BUNDLE_UPDATER_ENABLED',
+                'VITE_BUNDLE_UPDATER_API_BASE_URL',
+                'VITE_BUNDLE_UPDATER_APPLICATION_ID',
+                'VITE_BUNDLE_UPDATER_SIGNING_KEY_ID',
+            ].flatMap((key) => process.env[key] === undefined ? [] : [[key, process.env[key]]]),
+        ),
+        VITE_APP_VERSION: process.env.VITE_APP_VERSION ?? packageJson.version,
+      },
       target: {
         browser: ['es2022', 'firefox115', 'chrome115', 'safari14'],
         node: 'node20',
@@ -101,7 +113,7 @@ export default defineConfig((/* ctx */) => {
       // directives: [],
 
       // Quasar plugins
-      plugins: ['Notify'],
+      plugins: ['Loading', 'Notify'],
     },
 
     // animations: 'all', // --- includes all animations

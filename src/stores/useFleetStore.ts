@@ -1,40 +1,23 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 
-const TOKEN_KEY = 'fleet_token'
-const COMPANY_ID_KEY = 'fleet_company_id'
+const CLIENT_COMPANY_ID_KEY = 'fleet_client_company_id'
 const CLIENT_NAME_KEY = 'fleet_client_name'
 const CLIENT_ID_KEY = 'fleet_client_id'
 
 export const useFleetStore = defineStore('fleet', () => {
-    const token = ref<string | null>(localStorage.getItem(TOKEN_KEY))
-    const companyId = ref<string | null>(localStorage.getItem(COMPANY_ID_KEY))
+    const clientCompanyId = ref<string | null>(
+        localStorage.getItem(CLIENT_COMPANY_ID_KEY) || localStorage.getItem('fleet_company_id'),
+    )
     const clientId = ref<string | null>(localStorage.getItem(CLIENT_ID_KEY))
     const clientName = ref<string | null>(localStorage.getItem(CLIENT_NAME_KEY))
 
-    const setToken = (value: string | null) => {
-        token.value = value
-
-        if (value) {
-            localStorage.setItem(TOKEN_KEY, value)
-        } else {
-            localStorage.removeItem(TOKEN_KEY)
+    const useCompany = (companyId: string) => {
+        if (clientCompanyId.value !== companyId) {
+            setClientId(null)
         }
-    }
-
-    // Backward-compatible alias used by auth flow.
-    const setSessionToken = (value: string | null) => {
-        setToken(value)
-    }
-
-    const setCompanyId = (value: string | null) => {
-        companyId.value = value
-
-        if (value) {
-            localStorage.setItem(COMPANY_ID_KEY, value)
-        } else {
-            localStorage.removeItem(COMPANY_ID_KEY)
-        }
+        clientCompanyId.value = companyId
+        localStorage.setItem(CLIENT_COMPANY_ID_KEY, companyId)
     }
 
     const setClientName = (value: string) => {
@@ -54,19 +37,16 @@ export const useFleetStore = defineStore('fleet', () => {
     }
 
     const clearAuth = () => {
-        setToken(null)
-        setCompanyId(null)
+        clientCompanyId.value = null
+        localStorage.removeItem(CLIENT_COMPANY_ID_KEY)
         setClientId(null)
     }
 
     return {
-        token,
-        companyId,
+        clientCompanyId,
         clientId,
         clientName,
-        setToken,
-        setSessionToken,
-        setCompanyId,
+        useCompany,
         setClientId,
         setClientName,
         clearAuth,

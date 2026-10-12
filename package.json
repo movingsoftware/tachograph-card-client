@@ -1,6 +1,6 @@
 {
   "name": "tachograph-card-client",
-  "version": "0.0.1",
+  "version": "0.7.0",
   "description": "TransportKlok Tachograph Card Client",
   "productName": "TransportKlok Tachograafkaart Verbinder",
   "author": "Redmar Bakker <redmar@transportklok.nl>",
@@ -9,9 +9,10 @@
   "scripts": {
     "lint": "eslint -c ./eslint.config.js \"./src*/**/*.{ts,js,cjs,mjs,vue}\"",
     "format": "prettier --write \"**/*.{js,ts,vue,scss,html,md,json}\" --ignore-path .gitignore",
-    "test": "echo \"No test specified\" && exit 0",
+    "test": "vitest run",
     "dev": "quasar dev",
     "build": "quasar build",
+    "build:release": "node scripts/build-release.mjs",
     "tauri": "tauri",
     "postinstall": "quasar prepare"
   },
@@ -19,6 +20,8 @@
     "@quasar/extras": "^1.16.4",
     "@tauri-apps/plugin-opener": "^2.5.2",
     "@tauri-apps/plugin-os": "^2.3.2",
+    "@tauri-apps/plugin-process": "2.2.2",
+    "@tauri-apps/plugin-updater": "2.9.0",
     "animate.css": "^4.1.1",
     "pinia": "^3.0.3",
     "quasar": "^2.16.0",
@@ -42,7 +45,9 @@
     "tailwindcss": "^3.4.19",
     "typescript": "~5.5.3",
     "vite-plugin-checker": "^0.8.0",
-    "vue-tsc": "^2.0.29"
+    "vue-tsc": "^2.0.29",
+    "vitest": "^1.6.1",
+    "happy-dom": "^12.10.3"
   },
   "engines": {
     "node": "^28 || ^26 || ^24 || ^22 || ^20 || ^18",

@@ -15,7 +15,12 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_process::init())
         .setup(move |app| {
+            if app.config().plugins.0.contains_key("updater") {
+                app.handle().plugin(tauri_plugin_updater::Builder::new().build())?;
+            }
+
             // Obtain a lightweight reference to the app for convenient interaction
             let app_handle = app.app_handle();
 

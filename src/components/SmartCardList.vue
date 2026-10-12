@@ -1,20 +1,22 @@
 <template>
   <div class="q-pt-md">
-    <q-banner v-if="isLinkMode" dense inline-actions rounded class="text-white bg-blue-8 q-mb-xs">
-      Klik op een kaart in de lijst hieronder om toe te wijzen of klik
-      <q-btn
-        label="Kaart toevoegen"
-        dense
-        icon="mdi-card-plus"
-        color="white"
-        flat
-        class="q-ml-sm"
-        @click.stop="openAddDialog()"
-      />
-      <template v-slot:action>
-        <q-btn flat round color="white" icon="mdi-close" @click="cancelLink" />
-      </template>
-    </q-banner>
+    <template v-if="isLinkMode">
+      <q-banner dense inline-actions rounded class="text-white bg-blue-8 q-mb-xs">
+        Klik op een kaart in de lijst hieronder om toe te wijzen of klik
+        <q-btn
+          label="Kaart toevoegen"
+          dense
+          icon="mdi-card-plus"
+          color="white"
+          flat
+          class="q-ml-sm"
+          @click.stop="openAddDialog()"
+        />
+        <template v-slot:action>
+          <q-btn flat round color="white" icon="mdi-close" @click="cancelLink" />
+        </template>
+      </q-banner>
+    </template>
     <q-card flat bordered>
       <q-expansion-item v-model="isExpanded">
         <template v-slot:header>
@@ -38,16 +40,15 @@
         </template>
         <q-separator />
         <q-list separator>
-          <q-item
-            dense
-            v-for="(card, number) in cardsList"
-            :key="number"
-            @click="cardClick(number)"
-            clickable
-          >
+          <template v-for="(card, number) in cardsList" :key="number">
+            <q-item dense @click="cardClick(number)" clickable>
             <q-item-section avatar>
-              <q-icon name="mdi-link" color="grey" v-if="isLinkMode" />
-              <q-icon name="mdi-smart-card" color="grey" v-else />
+              <template v-if="isLinkMode">
+                <q-icon name="mdi-link" color="grey" />
+              </template>
+              <template v-else>
+                <q-icon name="mdi-smart-card" color="grey" />
+              </template>
             </q-item-section>
             <q-item-section>
               <q-item-label class="overflow-hidden ellipsis">
@@ -60,16 +61,19 @@
 
             <q-item-section>
               <q-item-label caption class="overflow-hidden ellipsis">
-                <q-chip v-if="card.iccid" dense size="sm" color="grey" class="text-dark text-bold">
-                  ICCID: {{ card.iccid }}
-                </q-chip>
+                <template v-if="card.iccid">
+                  <q-chip dense size="sm" color="grey" class="text-dark text-bold">
+                    ICCID: {{ card.iccid }}
+                  </q-chip>
+                </template>
               </q-item-label>
             </q-item-section>
 
             <q-item-section side>
               <q-btn dense flat icon="delete" color="red" round @click.stop="removeCard(number)" />
             </q-item-section>
-          </q-item>
+            </q-item>
+          </template>
         </q-list>
       </q-expansion-item>
     </q-card>

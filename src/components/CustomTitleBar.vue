@@ -20,18 +20,17 @@
                 @click="handleToggleMaximize"
                 :aria-label="maximizeLabel"
             >
-                <svg
-                    v-if="!isMaximized"
-                    viewBox="0 0 24 24"
-                    class="titlebar__icon"
-                    aria-hidden="true"
-                >
-                    <rect x="5" y="5" width="14" height="14" rx="2" />
-                </svg>
-                <svg v-else viewBox="0 0 24 24" class="titlebar__icon" aria-hidden="true">
-                    <path d="M8 8h8v2H10v6H8z" />
-                    <path d="M10 10h6v6h-2v-4h-4z" />
-                </svg>
+                <template v-if="!isMaximized">
+                    <svg viewBox="0 0 24 24" class="titlebar__icon" aria-hidden="true">
+                        <rect x="5" y="5" width="14" height="14" rx="2" />
+                    </svg>
+                </template>
+                <template v-else>
+                    <svg viewBox="0 0 24 24" class="titlebar__icon" aria-hidden="true">
+                        <path d="M8 8h8v2H10v6H8z" />
+                        <path d="M10 10h6v6h-2v-4h-4z" />
+                    </svg>
+                </template>
             </button>
             <button
                 class="titlebar__button titlebar__button--close"

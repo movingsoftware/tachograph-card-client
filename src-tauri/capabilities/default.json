@@ -8,6 +8,10 @@
   "permissions": [
     "core:default",
     "opener:default",
-    "os:default"
+    "os:default",
+    "updater:allow-check",
+    "updater:allow-download",
+    "updater:allow-install",
+    "process:allow-restart"
   ]
 }
