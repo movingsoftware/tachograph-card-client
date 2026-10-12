@@ -45,8 +45,8 @@ export interface TwoFactorChallengePayload {
 const applicationKey = (import.meta as { env: Record<string, string> }).env.VITE_APP_KEY || ''
 
 export const authService = createAuthService({
-    applicationKey,
-    api,
+    getApplicationKey: () => applicationKey,
+    get api() { return api },
 })
 
 export const requestAuthenticationTokenByCredentials =

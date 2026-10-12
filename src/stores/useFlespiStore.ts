@@ -39,7 +39,8 @@ export const useFlespiStore = defineStore('flespi', () => {
         cachedTheme.value = (theme as ServerTheme) || 'Auto'
     }
 
-    const applyFlespiServerConfig = async () => {
+    const applyFlespiServerConfig = async (assertCurrent: () => void): Promise<void> => {
+        assertCurrent()
         const host = flespiHost.value || 'ch1330201.flespi.gw:29466'
         const ident = cachedIdent.value
         const theme = cachedTheme.value || 'Auto'
@@ -58,11 +59,16 @@ export const useFlespiStore = defineStore('flespi', () => {
         }
 
         try {
+            assertCurrent()
             await invoke('update_server', { host, ident, theme })
+            assertCurrent()
             await invoke('manual_sync_cards', { readername: '', restart: true })
+            assertCurrent()
             await invoke('app_connection')
+            assertCurrent()
             lastAppliedConfig.value = { host, ident, theme }
         } catch (error) {
+            assertCurrent()
             console.error('Unable to push Flespi server configuration', error)
         }
     }

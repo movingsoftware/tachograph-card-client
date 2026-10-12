@@ -7,14 +7,12 @@ const API_BASE_URL =
     (import.meta as { env: Record<string, string> }).env.VITE_TRANSPORTKLOK_API_DOMAIN ||
     'https://api.transportklok.nl'
 
-const { api, setAuthToken } = createApiService({
+const { api } = createApiService({
     baseURL: API_BASE_URL,
     communicationEvents,
-    getSessionToken: () => useAuthStore().sessionToken,
-    clearSession: () => useAuthStore().clearSession(),
+    auth: () => useAuthStore().authSession,
+    onUnauthorized: () => { void communicationEvents.emitUnauthorized() },
     isOnline: () => useNetworkStore().isOnline,
-    refreshSession: () => useAuthStore().refreshSessionToken(),
 })
 
-export { setAuthToken }
 export default api
