@@ -4,6 +4,8 @@ import {join} from 'node:path'
 
 const stableVersion = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/
 const maximumVersionPart = 4294967295
+export const cargoPackageVersion = /(^\[package\][\s\S]*?^version\s*=\s*")[^"]+("\s*$)/m
+export const cargoLockApplicationVersion = /(^\[\[package\]\]\nname = "tacho-bridge-application"\nversion = ")[^"]+("\n)/m
 
 export function validateApplicationVersion(version) {
     const match = stableVersion.exec(version)
@@ -30,13 +32,11 @@ export async function synchronizeApplicationVersion(root, version) {
     tauriConfig.version = version
 
     const cargoManifest = await readFile(cargoPath, 'utf8')
-    const packageSection = /(^\[package\][\s\S]*?^version\s*=\s*")[^"]+("\s*$)/m
-    if (!packageSection.test(cargoManifest)) throw new Error('Cargo package version was not found.')
-    const updatedCargoManifest = cargoManifest.replace(packageSection, `$1${version}$2`)
+    if (!cargoPackageVersion.test(cargoManifest)) throw new Error('Cargo package version was not found.')
+    const updatedCargoManifest = cargoManifest.replace(cargoPackageVersion, `$1${version}$2`)
     const cargoLock = await readFile(cargoLockPath, 'utf8')
-    const packageLockSection = /(^\[\[package\]\]\nname = "tacho-bridge-application"\nversion = ")[^"]+("\n)/m
-    if (!packageLockSection.test(cargoLock)) throw new Error('Cargo.lock application package entry was not found.')
-    const updatedCargoLock = cargoLock.replace(packageLockSection, `$1${version}$2`)
+    if (!cargoLockApplicationVersion.test(cargoLock)) throw new Error('Cargo.lock application package entry was not found.')
+    const updatedCargoLock = cargoLock.replace(cargoLockApplicationVersion, `$1${version}$2`)
 
     await writeFile(packagePath, `${JSON.stringify(packageJson, null, 2)}\n`)
     await writeFile(packageLockPath, `${JSON.stringify(packageLock, null, 2)}\n`)

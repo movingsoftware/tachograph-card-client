@@ -1,0 +1,322 @@
+name: Publish application bundles
+
+on:
+  push:
+    tags:
+      - '[0-9]+.[0-9]+.[0-9]+'
+  workflow_dispatch:
+    inputs:
+      action:
+        description: Act on the production channel's live web bundle
+        required: true
+        type: choice
+        options:
+          - widen
+          - rollback
+      percent:
+        description: Rollout percentage to widen to (widen)
+        required: false
+        type: string
+        default: '100'
+      reason:
+        description: Why, kept in Platform's bundle audit
+        required: true
+        type: string
+
+concurrency:
+  group: tcc-application-bundles
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  AWS_REGION: eu-west-2
+  CHANNEL: production
+
+jobs:
+  release:
+    name: Guard the tag and choose web or native
+    if: ${{ github.event_name == 'push' }}
+    runs-on: blacksmith-2vcpu-ubuntu-2204
+    timeout-minutes: 10
+    outputs:
+      version: ${{ steps.guard.outputs.version }}
+      path: ${{ steps.path.outputs.path }}
+    steps:
+      - name: Checkout TCC
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Check the tag is on main and equals package.json
+        id: guard
+        run: |
+          set -euo pipefail
+          tag="$GITHUB_REF_NAME"
+          version="$(node -p 'require("./package.json").version')"
+          test "$GITHUB_REF_TYPE" = tag
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main || { echo "Tag $tag is not on main." >&2; exit 1; }
+          test "$version" = "$tag" || { echo "Tag $tag does not equal package.json's version $version." >&2; exit 1; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Decide web bundle or native release
+        id: path
+        run: |
+          set -euo pipefail
+          result="$(node scripts/native-change.mjs)"
+          echo "$result"
+          path="$(head -n 1 <<<"$result")"
+          if [ "$path" = native ]; then
+            {
+              echo "### $GITHUB_REF_NAME changes the native shell since the native baseline"
+              echo '```'
+              echo "$result"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+          echo "path=$path" >> "$GITHUB_OUTPUT"
+
+  web:
+    name: Publish the web bundle at 10%
+    needs: release
+    if: ${{ needs.release.outputs.path == 'web' }}
+    runs-on: blacksmith-2vcpu-ubuntu-2204
+    timeout-minutes: 30
+    environment: tcc-production
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      VERSION: ${{ needs.release.outputs.version }}
+      APPLICATION_ID: ${{ vars.TCC_PRODUCTION_APP_ID }}
+      BUCKET: ${{ vars.TCC_BUNDLES_BUCKET }}
+      PLATFORM_ECS_CLUSTER: ${{ vars.PLATFORM_ECS_CLUSTER }}
+      PLATFORM_ECS_SERVICE: ${{ vars.PLATFORM_ECS_SERVICE }}
+    steps:
+      - name: Require the environment's names
+        env:
+          SHARED_SOURCE_REVISION: ${{ vars.SHARED_JS_SOURCE_REVISION }}
+          CROSS_REPO_READ_TOKEN: ${{ secrets.CROSS_REPO_READ_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          BUNDLE_UPDATER_API_BASE_URL: ${{ vars.BUNDLE_UPDATER_API_BASE_URL }}
+          BUNDLE_UPDATER_SIGNING_KEY_ID: ${{ vars.BUNDLE_UPDATER_SIGNING_KEY_ID }}
+          BUNDLE_UPDATER_PUBLIC_KEY: ${{ vars.TAURI_SIGNING_PUBLIC_KEY }}
+        run: |
+          set -euo pipefail
+          [[ "$SHARED_SOURCE_REVISION" =~ ^[a-f0-9]{40}$ ]] || { echo 'SHARED_JS_SOURCE_REVISION must be a full commit SHA.' >&2; exit 1; }
+          for name in CROSS_REPO_READ_TOKEN TAURI_SIGNING_PRIVATE_KEY BUNDLE_UPDATER_API_BASE_URL BUNDLE_UPDATER_SIGNING_KEY_ID \
+            BUNDLE_UPDATER_PUBLIC_KEY APPLICATION_ID BUCKET PLATFORM_ECS_CLUSTER PLATFORM_ECS_SERVICE; do
+            test -n "${!name:-}" || { echo "$name is required in the tcc-production environment." >&2; exit 1; }
+          done
+
+      - name: Checkout TCC
+        uses: actions/checkout@v4
+        with:
+          path: tachograph-card-client
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Checkout the pinned shared.js
+        uses: actions/checkout@v4
+        with:
+          repository: transportklok/shared.js
+          ref: ${{ vars.SHARED_JS_SOURCE_REVISION }}
+          token: ${{ secrets.CROSS_REPO_READ_TOKEN }}
+          path: shared.js
+          persist-credentials: false
+
+      - name: Verify exact shared source revision
+        env:
+          SHARED_SOURCE_REVISION: ${{ vars.SHARED_JS_SOURCE_REVISION }}
+        run: test "$(git -C shared.js rev-parse HEAD)" = "$SHARED_SOURCE_REVISION"
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Build shared.js
+        working-directory: shared.js
+        env:
+          npm_config_script_shell: bash
+        run: |
+          npm ci
+          npm run build
+
+      - name: Build dist/spa with the release's updater configuration
+        working-directory: tachograph-card-client
+        env:
+          BUNDLE_APP_VERSION: ${{ needs.release.outputs.version }}
+          BUNDLE_UPDATER_API_BASE_URL: ${{ vars.BUNDLE_UPDATER_API_BASE_URL }}
+          BUNDLE_UPDATER_APPLICATION_ID: ${{ vars.TCC_PRODUCTION_APP_ID }}
+          BUNDLE_UPDATER_SIGNING_KEY_ID: ${{ vars.BUNDLE_UPDATER_SIGNING_KEY_ID }}
+          BUNDLE_UPDATER_PUBLIC_KEY: ${{ vars.TAURI_SIGNING_PUBLIC_KEY }}
+        run: |
+          set -euo pipefail
+          npm ci
+          npm test
+          npm run build:release -- --web-only
+          test -f dist/spa/index.html
+
+      - name: Zip and minisign the bundle
+        working-directory: tachograph-card-client
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          zip="$RUNNER_TEMP/tcc-web-$VERSION.zip"
+          (cd dist/spa && zip -qrX "$zip" .)
+          npm run tauri -- signer sign "$zip"
+          test -s "$zip.sig"
+
+      - name: Write the manifest with the native range
+        working-directory: tachograph-card-client
+        env:
+          SIGNING_KEY_ID: ${{ vars.BUNDLE_UPDATER_SIGNING_KEY_ID }}
+          SHARED_SOURCE_REVISION: ${{ vars.SHARED_JS_SOURCE_REVISION }}
+        run: |
+          set -euo pipefail
+          notes="$(git tag -l --format='%(contents)' "$GITHUB_REF_NAME")"
+          node scripts/web-bundle.mjs --zip "$RUNNER_TEMP/tcc-web-$VERSION.zip" --signature "$RUNNER_TEMP/tcc-web-$VERSION.zip.sig" \
+            --output "$RUNNER_TEMP/manifest.json" --application-id "$APPLICATION_ID" --version "$VERSION" \
+            --release-notes "${notes:-TCC $VERSION}" --signing-key-id "$SIGNING_KEY_ID" \
+            --source-revision "$GITHUB_SHA" --shared-source-revision "$SHARED_SOURCE_REVISION" \
+            --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT" > "$RUNNER_TEMP/keys.json"
+          jq '{version, native_min, native_max, artifacts: [.artifacts[] | {file_name, size_bytes, sha256}]}' "$RUNNER_TEMP/manifest.json" | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Keep the bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: tcc-web-bundle
+          path: |
+            ${{ runner.temp }}/tcc-web-*.zip
+            ${{ runner.temp }}/tcc-web-*.zip.sig
+            ${{ runner.temp }}/manifest.json
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Configure the bundle AWS role
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ secrets.TCC_BUNDLES_AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # Create-only keys: a rerun with other bytes fails instead of replacing a published bundle.
+      - name: Upload the bundle and its manifest to the ingress bucket
+        run: |
+          set -euo pipefail
+          artifact_key="$(jq -r .artifact_key "$RUNNER_TEMP/keys.json")"
+          manifest_key="$(jq -r .manifest_key "$RUNNER_TEMP/keys.json")"
+          aws s3api put-object --bucket "$BUCKET" --key "$artifact_key" --body "$RUNNER_TEMP/tcc-web-$VERSION.zip" \
+            --content-type application/zip --if-none-match '*' > /dev/null
+          aws s3api put-object --bucket "$BUCKET" --key "$manifest_key" --body "$RUNNER_TEMP/manifest.json" \
+            --content-type application/json --if-none-match '*' > /dev/null
+
+      - name: Import, publish and make it live on the channel at 10%
+        working-directory: tachograph-card-client
+        run: |
+          set -euo pipefail
+          bash scripts/platform-artisan.sh '
+            php artisan applications:bundles:import "$BUNDLE_APP" --manifest-key="$BUNDLE_MANIFEST_KEY" --expected-bucket="$BUNDLE_BUCKET" \
+              --manifest-content-sha256="$BUNDLE_RAW_SHA256" --json --no-interaction > /tmp/bundle-import.json &&
+            MANIFEST_SHA256="$(php -r '"'"'echo json_decode(file_get_contents("/tmp/bundle-import.json"), true, 512, JSON_THROW_ON_ERROR)["manifest_sha256"];'"'"')" &&
+            php artisan applications:bundles:publish "$BUNDLE_APP" "$BUNDLE_VERSION" --manifest-sha256="$MANIFEST_SHA256" --json --no-interaction &&
+            php artisan applications:bundles:channel "$BUNDLE_APP" "$BUNDLE_CHANNEL" "$BUNDLE_VERSION" --rollout=10 --reason="$BUNDLE_REASON" --json --no-interaction' \
+            "BUNDLE_APP=$APPLICATION_ID" "BUNDLE_VERSION=$VERSION" "BUNDLE_CHANNEL=$CHANNEL" "BUNDLE_BUCKET=$BUCKET" \
+            "BUNDLE_MANIFEST_KEY=$(jq -r .manifest_key "$RUNNER_TEMP/keys.json")" \
+            "BUNDLE_RAW_SHA256=$(jq -r .raw_manifest_sha256 "$RUNNER_TEMP/keys.json")" \
+            "BUNDLE_REASON=Tag $GITHUB_REF_NAME, run $GITHUB_RUN_ID"
+          echo "$VERSION is live on $CHANNEL for 10%. Widen or roll back with a manual run of this workflow." >> "$GITHUB_STEP_SUMMARY"
+
+  # The native shell's signed installer and updater matrix is Platform's publish-application-bundles.yml; a workflow may not push, so the raised baseline leaves as an artifact.
+  native:
+    name: Hand over the native release
+    needs: release
+    if: ${{ needs.release.outputs.path == 'native' }}
+    runs-on: blacksmith-2vcpu-ubuntu-2204
+    timeout-minutes: 5
+    env:
+      VERSION: ${{ needs.release.outputs.version }}
+      SHARED_SOURCE_REVISION: ${{ vars.SHARED_JS_SOURCE_REVISION }}
+    steps:
+      - name: Checkout TCC
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Raise the native baseline to this release
+        run: |
+          set -euo pipefail
+          jq --arg tag "$VERSION" '.baseline_tag = $tag' native-baseline.json > native-baseline.next.json
+          mv native-baseline.next.json native-baseline.json
+          {
+            echo "### $VERSION is a native release"
+            echo "No web bundle was published. Build and publish the native shell with Platform's \`publish-application-bundles.yml\`:"
+            echo "- version: \`$VERSION\`"
+            echo "- tcc_source_revision: \`$GITHUB_SHA\`"
+            echo "- shared_source_revision: \`$SHARED_SOURCE_REVISION\`"
+            echo "Once it is published, open a PR into main with this native-baseline.json (the \`native-baseline\` artifact):"
+            echo '```json'
+            cat native-baseline.json
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Keep the raised baseline
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-baseline
+          path: native-baseline.json
+          if-no-files-found: error
+          retention-days: 90
+
+  channel:
+    name: ${{ inputs.action }} the production channel
+    if: ${{ github.event_name == 'workflow_dispatch' }}
+    runs-on: blacksmith-2vcpu-ubuntu-2204
+    timeout-minutes: 15
+    environment: tcc-production
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      ACTION: ${{ inputs.action }}
+      PERCENT: ${{ inputs.percent }}
+      REASON: ${{ inputs.reason }}
+      APPLICATION_ID: ${{ vars.TCC_PRODUCTION_APP_ID }}
+      PLATFORM_ECS_CLUSTER: ${{ vars.PLATFORM_ECS_CLUSTER }}
+      PLATFORM_ECS_SERVICE: ${{ vars.PLATFORM_ECS_SERVICE }}
+    steps:
+      - name: Check the inputs
+        run: |
+          set -euo pipefail
+          test -n "$APPLICATION_ID" || { echo 'TCC_PRODUCTION_APP_ID is required in the tcc-production environment.' >&2; exit 1; }
+          test -n "${REASON// /}" || { echo 'Give a reason.' >&2; exit 1; }
+          if [ "$ACTION" = widen ]; then
+            [[ "$PERCENT" =~ ^[0-9]+$ ]] && [ "$PERCENT" -ge 1 ] && [ "$PERCENT" -le 100 ] \
+              || { echo "Widen takes a percentage from 1 to 100, not '$PERCENT'." >&2; exit 1; }
+          fi
+
+      - name: Checkout TCC
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Configure the bundle AWS role
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ secrets.TCC_BUNDLES_AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Act on the production channel
+        run: |
+          set -euo pipefail
+          case "$ACTION" in
+            widen) command='php artisan applications:bundles:widen "$BUNDLE_APP" "$BUNDLE_CHANNEL" "$BUNDLE_PERCENT" --reason="$BUNDLE_REASON" --json --no-interaction' ;;
+            rollback) command='php artisan applications:bundles:rollback "$BUNDLE_APP" "$BUNDLE_CHANNEL" --reason="$BUNDLE_REASON" --json --no-interaction' ;;
+            *) echo "Unknown action '$ACTION'." >&2; exit 1 ;;
+          esac
+          bash scripts/platform-artisan.sh "$command" "BUNDLE_APP=$APPLICATION_ID" "BUNDLE_CHANNEL=$CHANNEL" "BUNDLE_PERCENT=$PERCENT" "BUNDLE_REASON=$REASON"
+          echo "$ACTION on $CHANNEL done; the receipt is in the Platform task's log." >> "$GITHUB_STEP_SUMMARY"
