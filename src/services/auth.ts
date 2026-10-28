@@ -8,6 +8,7 @@ export interface DeviceRegistrationPayload {
     os_version?: string
     application_version?: string
     device_manufacturer?: string
+    installation_id?: string
 }
 
 export interface LoginPayload {

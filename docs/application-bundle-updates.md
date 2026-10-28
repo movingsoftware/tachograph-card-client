@@ -6,12 +6,9 @@ through the Tauri updater plugin, verifies the native minisign signature, instal
 the held update, and asks Tauri to relaunch. Route flow, card monitoring, MQTT,
 and the frontend-loaded event do not start until that startup check finishes.
 
-During normal use, the client checks release metadata every six hours with small
-jitter. It only reports that an update will be installed at the next restart; it
-does not download or install while card or MQTT work may be active. The app has no
-native idle/drain contract, so in-session installation is intentionally deferred
-until one exists. Manual release discovery is available through the updater
-service's `checkManually()` method and performs a metadata check only.
+During normal use, the client checks again when the app becomes visible, as
+described under the launch gate below, and never installs while a card is
+authenticating. Both updaters are `createLiveBundleUpdater` from shared.js.
 
 Development and ordinary frontend builds leave the updater disabled. A release
 build uses `npm run build:release` and requires all of these environment values:
@@ -42,3 +39,28 @@ install or relaunch failure blocks route flow and displays recovery guidance,
 because continuing after a partially applied update could start work against an
 uncertain executable. The browser development adapter uses the explicitly injected
 build version and does not register native updater behavior.
+
+## Launch gate and web bundles
+
+The launch route flow starts with a `check-bundle-update` step, before the user gets
+to log in. It checks the native bundle first, then the web bundle. Either one that is
+newer is downloaded, installed and applied by relaunching before the flow continues.
+A failed install keeps the launch screen and offers a restart. The check runs once
+per app start; a launch flow that restarts later (offline, maintenance, logout)
+reuses the result.
+
+Web bundles come from `/bundles/web/latest`. The client sends the installation id,
+the native version and the channel (`stable` unless Platform overrides it for this
+installation). Any other version, older or newer, is available, because a channel
+can roll a web bundle back. The native side downloads the zip, verifies it and
+stages it (`install_web_bundle`). The relaunch then serves it.
+
+When the app becomes visible again, it checks native and web bundles at most once
+every 15 minutes. It downloads and applies an update only while no card is
+authenticating, which the native side reports with every `global-cards-sync` event.
+An update downloaded while a card became busy is applied at the next resume check or start. Card
+monitoring and MQTT start only after the frontend loads, which is after the launch gate.
+
+The installation id is a random UUID kept in local storage
+(`transportklok_installation_id`), so it survives web bundle updates. It is sent as
+`installation_id` with device registration.

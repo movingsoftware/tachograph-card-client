@@ -4415,11 +4415,14 @@ dependencies = [
 name = "tacho-bridge-application"
 version = "0.7.0"
 dependencies = [
+ "base64 0.22.1",
  "chrono",
+ "dirs",
  "fern",
  "hex",
  "lazy_static",
  "log",
+ "minisign-verify",
  "native-tls",
  "once_cell",
  "pcsc",
@@ -4428,6 +4431,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_yaml",
+ "sha2",
  "sys-info",
  "tauri",
  "tauri-build",
@@ -4438,6 +4442,7 @@ dependencies = [
  "tauri-plugin-updater",
  "tokio",
  "tokio-native-tls",
+ "zip",
 ]
 
 [[package]]
@@ -6538,6 +6543,7 @@ checksum = "caa8cd6af31c3b31c6631b8f483848b91589021b28fffe50adada48d4f4d2ed1"
 dependencies = [
  "arbitrary",
  "crc32fast",
+ "flate2",
  "indexmap 2.13.0",
  "memchr",
 ]
