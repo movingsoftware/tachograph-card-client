@@ -5,6 +5,9 @@ import type {DeviceRegistrationPayload, UpdateDevicePayload} from './auth'
 
 const BUNDLED_APP_VERSION = import.meta.env.VITE_APP_VERSION
 
+/** Local storage key of this installation's stable id. */
+const INSTALLATION_ID_KEY = 'transportklok_installation_id'
+
 export interface DeviceRuntimeInitializer {
     readonly isNative: boolean
     readonly getNativeVersion: () => Promise<string>
@@ -92,6 +95,7 @@ export const getCurrentDeviceRegistrationPayload = (): DeviceRegistrationPayload
         device_name: nav?.userAgent || 'TransportKlok Desktop',
         os_version: runtimeSnapshot.platform,
         application_version: runtimeSnapshot.applicationVersion,
+        installation_id: getInstallationId(),
     }
 }
 
@@ -114,3 +118,24 @@ export const getDeviceRuntimeInfo = (): {version: string; target: string} => ({
     version: runtimeSnapshot.nativeApplicationVersion,
     target: runtimeSnapshot.target,
 })
+
+/** Creates a random version 4 UUID; `crypto.randomUUID` is missing from the Safari 14 webviews this app supports. */
+const randomUuid = (): string => {
+    const bytes = crypto.getRandomValues(new Uint8Array(16))
+    bytes[6] = (bytes[6] & 0x0f) | 0x40
+    bytes[8] = (bytes[8] & 0x3f) | 0x80
+    const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')
+    return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
+}
+
+/** Returns this installation's stable id, created once and kept in local storage across bundle updates. */
+export const getInstallationId = (): string => {
+    const stored = localStorage.getItem(INSTALLATION_ID_KEY)
+    if (stored) return stored
+    const created = randomUuid()
+    localStorage.setItem(INSTALLATION_ID_KEY, created)
+    return created
+}
+
+/** Returns the version of the web bundle that is running. */
+export const getCurrentWebBundleVersion = (): string => BUNDLED_APP_VERSION

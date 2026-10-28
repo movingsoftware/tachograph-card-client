@@ -1,10 +1,30 @@
 // @vitest-environment node
-import {afterEach, describe, expect, it, vi} from 'vitest'
-import {getCurrentDeviceRegistrationPayload, getDeviceRuntimeInfo, initializeDeviceRuntime} from '../deviceRuntime'
+import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest'
+import {getCurrentDeviceRegistrationPayload, getDeviceRuntimeInfo, getInstallationId, initializeDeviceRuntime} from '../deviceRuntime'
+
+/** An in-memory local storage, since the node environment has none. */
+const memoryStorage = (): Pick<Storage, 'getItem' | 'setItem'> => {
+    const items = new Map<string, string>()
+    return {getItem: (key) => items.get(key) ?? null, setItem: (key, value) => { items.set(key, value) }}
+}
 
 describe('device runtime version initialization', () => {
+    beforeEach(() => {
+        vi.stubGlobal('localStorage', memoryStorage())
+    })
+
     afterEach(() => {
         vi.unstubAllEnvs()
+        vi.unstubAllGlobals()
+    })
+
+    it('creates one stable installation id and sends it with device registration', () => {
+        const installationId = getInstallationId()
+
+        expect(installationId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)
+        expect(getInstallationId()).toBe(installationId)
+        expect(localStorage.getItem('transportklok_installation_id')).toBe(installationId)
+        expect(getCurrentDeviceRegistrationPayload().installation_id).toBe(installationId)
     })
 
     it('uses the native installed version and compile-time operating system target', async () => {

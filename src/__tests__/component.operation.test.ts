@@ -13,6 +13,7 @@ const state = vi.hoisted(() => ({
     release: null as (() => void) | null,
     startupComplete: false,
     invoke: vi.fn(),
+    notify: vi.fn(),
     requests: [] as Array<{ method: string; url: string; authorization: string; data: unknown }>,
     issues: 0,
     validAdd: false,
@@ -44,6 +45,7 @@ vi.mock('../components/SmartCardList.vue', () => ({
     }),
 }))
 vi.mock('@tauri-apps/api/core', () => ({ invoke: state.invoke }))
+vi.mock('quasar', () => ({ Notify: { create: state.notify } }))
 vi.mock('@tauri-apps/api/event', () => ({
     emit: vi.fn((event: string) => {
         if (event === 'frontend-loaded') state.frontendEmits += 1
@@ -232,6 +234,34 @@ describe('TachoMainComponent fleet operation ownership', () => {
         }
     })
 
+    it('confirms the web bundle once the frontend has loaded', async () => {
+        let app: ReturnType<typeof createApp> | undefined
+        let host: HTMLDivElement | undefined
+        try {
+            ({ app, host } = await mountComponent())
+            expect(state.frontendEmits).toBe(1)
+            expect(state.invoke).toHaveBeenCalledWith('bundle_ready')
+            expect(state.notify).not.toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining('teruggedraaid') }))
+        } finally {
+            app?.unmount()
+            host?.remove()
+        }
+    })
+
+    it('reports a web bundle the native side rolled back', async () => {
+        state.invoke.mockImplementation((command: string) => Promise.resolve(command === 'bundle_ready' ? '2.0.0' : undefined))
+        let app: ReturnType<typeof createApp> | undefined
+        let host: HTMLDivElement | undefined
+        try {
+            ({ app, host } = await mountComponent())
+            await waitFor(() => state.notify.mock.calls.length > 0)
+            expect(state.notify).toHaveBeenCalledWith(expect.objectContaining({ type: 'warning', message: 'Update 2.0.0 kon niet starten en is teruggedraaid.' }))
+        } finally {
+            app?.unmount()
+            host?.remove()
+        }
+    })
+
     it('fails bootstrap when the required card listener cannot register', async () => {
         state.rejectEvent = 'global-card-config-updated'
         const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined)
@@ -243,6 +273,7 @@ describe('TachoMainComponent fleet operation ownership', () => {
             state.emit?.('add-card', '1234567890123456', { name: 'New card', iccid: '' })
             await new Promise((resolve) => setTimeout(resolve, 0))
             expect(state.frontendEmits).toBe(0)
+            expect(state.invoke).not.toHaveBeenCalledWith('bundle_ready')
             expect(state.nativeCalls).toHaveLength(0)
             expect(state.requests.filter((request) => request.method.toLowerCase() === 'post')).toHaveLength(0)
             expect(errors).toHaveBeenCalled()

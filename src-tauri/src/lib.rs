@@ -5,12 +5,17 @@ mod config; // Configuration handling.
 mod global_app_handle;
 mod logger; // Logging functionality.
 mod mqtt; // MQTT communication.
+mod web_bundle; // Installed web bundle served with the embedded one as fallback, rolled back when its launch fails.
+mod web_bundle_install; // Verifies and unpacks a downloaded web bundle zip.
 mod smart_card; // PCSC module for smart card operations. // Global access to app state and emitters.
 
 // ───── External Crates ─────
 use tauri::{async_runtime, Listener, Manager, WindowEvent}; // Tauri application framework and async runtime.
 
 pub fn run() {
+    let mut context = tauri::generate_context!();
+    web_bundle::serve(&mut context);
+
     // start builder to run tauri applicationrustup target add aarch64-pc-windows-msvc
     tauri::Builder::default()
         .plugin(tauri_plugin_os::init())
@@ -105,7 +110,10 @@ pub fn run() {
             config::remove_card,           // remove card from config
             smart_card::manual_sync_cards, // manual sync cards from the frontend
             app_connect::app_connection,   // App connection to the MQTT broker
+            web_bundle::install_web_bundle, // download, verify and stage a signed web bundle
+            web_bundle::bundle_ready,       // confirm the running web bundle started
+            web_bundle::web_bundle_status,  // report installed web bundles and rollbacks
         ])
-        .run(tauri::generate_context!())
+        .run(context)
         .expect("error while running tauri application");
 }
