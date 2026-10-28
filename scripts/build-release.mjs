@@ -8,7 +8,9 @@ import {parseReleaseBuildArguments} from './release-build-arguments.mjs'
 import {synchronizeApplicationVersion} from './set-application-version.mjs'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
-const forwardedArguments = parseReleaseBuildArguments(process.argv.slice(2))
+// --web-only builds just dist/spa with the release's updater configuration, for a web bundle.
+const webOnly = process.argv[2] === '--web-only'
+const forwardedArguments = parseReleaseBuildArguments(process.argv.slice(webOnly ? 3 : 2))
 const version = process.env.BUNDLE_APP_VERSION
 if (!version) throw new Error('Set BUNDLE_APP_VERSION before building a release.')
 const prepared = prepareBundleUpdaterConfig(process.env, {
@@ -27,19 +29,30 @@ if (packageJson.version !== version || tauriConfig.version !== version || cargoV
     throw new Error('Release version synchronization did not update every native package manifest.')
 }
 
-const temporaryDirectory = await mkdtemp(join(tmpdir(), 'tcc-bundle-updater-'))
-try {
-    const configPath = join(temporaryDirectory, 'updater-config.json')
-    await writeFile(configPath, JSON.stringify(prepared.tauriConfig), {mode: 0o600})
-    const npmCli = process.env.npm_execpath
-    if (!npmCli) throw new Error('Run the release build through npm so its CLI path is available.')
-    const result = spawnSync(process.execPath, [npmCli, 'run', 'tauri', '--', 'build', '--config', configPath, ...forwardedArguments], {
+const npmCli = process.env.npm_execpath
+if (!npmCli) throw new Error('Run the release build through npm so its CLI path is available.')
+
+// Runs an npm script with the release's frontend environment.
+function runNpm(args) {
+    const result = spawnSync(process.execPath, [npmCli, 'run', ...args], {
         cwd: root,
         env: {...process.env, ...prepared.frontendEnvironment},
         stdio: 'inherit',
     })
     if (result.error) throw result.error
     if (result.status !== 0) process.exitCode = result.status ?? 1
-} finally {
-    await rm(temporaryDirectory, {recursive: true, force: true})
+}
+
+if (webOnly) {
+    if (forwardedArguments.length) throw new Error('--web-only takes no target or bundles.')
+    runNpm(['build'])
+} else {
+    const temporaryDirectory = await mkdtemp(join(tmpdir(), 'tcc-bundle-updater-'))
+    try {
+        const configPath = join(temporaryDirectory, 'updater-config.json')
+        await writeFile(configPath, JSON.stringify(prepared.tauriConfig), {mode: 0o600})
+        runNpm(['tauri', '--', 'build', '--config', configPath, ...forwardedArguments])
+    } finally {
+        await rm(temporaryDirectory, {recursive: true, force: true})
+    }
 }

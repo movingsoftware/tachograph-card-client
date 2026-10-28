@@ -1,5 +1,7 @@
 name: 'Publish as release'
 
+# Installers only: draft GitHub releases for a manual install. Updates reach installed apps through publish-application-bundles.yml.
+
 on:
   push:
     branches:
