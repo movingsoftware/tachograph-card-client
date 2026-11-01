@@ -29,6 +29,27 @@ export interface NativeBundleDownloader {
     relaunch(): Promise<void>
 }
 
+/** A web bundle the native side downloads and checks against its sha256 and signature. */
+export interface NativeWebBundle {
+    readonly url: string
+    readonly version: string
+    readonly sha256: string
+    readonly signature: string
+}
+
+/** Hands over a web bundle only when the manifest signs it with this build's key. */
+export const createNativeWebBundleDownloader = (signingKeyId: string) => async (
+    {artifact, version}: ApplicationBundleDownloadDescriptor,
+): Promise<ApplicationBundleDownloadResult<NativeWebBundle>> => {
+    if (!artifact.signature || artifact.signing_key_id !== signingKeyId) {
+        throw new ApplicationBundleError('candidate_changed', 'The web bundle is not signed with this build\'s key.')
+    }
+    return {
+        verification: 'native-signature',
+        value: {url: artifact.download_url, version, sha256: artifact.sha256, signature: artifact.signature},
+    }
+}
+
 const sizeError = (): ApplicationBundleError => new ApplicationBundleError('size_mismatch', 'Native updater download size did not match release metadata.')
 
 const rawJsonString = (rawJson: Record<string, unknown>, property: string): string | undefined => {

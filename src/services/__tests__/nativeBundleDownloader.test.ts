@@ -1,7 +1,7 @@
 // @vitest-environment node
 import {describe, expect, it, vi} from 'vitest'
 import type {ApplicationBundleDownloadDescriptor} from 'shared.js'
-import {createNativeBundleDownloader, type NativeUpdaterEvent, type NativeUpdaterUpdate} from '../nativeBundleDownloader'
+import {createNativeBundleDownloader, createNativeWebBundleDownloader, type NativeUpdaterEvent, type NativeUpdaterUpdate} from '../nativeBundleDownloader'
 
 const descriptor: ApplicationBundleDownloadDescriptor = {
     applicationId: 'c86b7a60-9ef2-4ba8-b4d1-42ef6346ecb7',
@@ -175,5 +175,29 @@ describe('native bundle downloader', () => {
         await expect(adapter.install(result.value)).rejects.toMatchObject({code: 'aborted'})
         expect(settled.close).toHaveBeenCalledOnce()
         expect(settled.install).not.toHaveBeenCalled()
+    })
+})
+
+describe('native web bundle downloader', () => {
+    const web: ApplicationBundleDownloadDescriptor = {
+        ...descriptor,
+        target: 'web',
+        kind: 'web',
+        version: '0.8.0',
+        artifact: {...descriptor.artifact, target: 'web', kind: 'web', format: 'zip', download_url: 'https://api.transportklok.nl/web.zip'},
+    }
+
+    it('hands a bundle signed with this build\'s key to the native side with its sha256 and signature', async () => {
+        await expect(createNativeWebBundleDownloader('desktop-release-2026')(web)).resolves.toEqual({
+            verification: 'native-signature',
+            value: {url: 'https://api.transportklok.nl/web.zip', version: '0.8.0', sha256: web.artifact.sha256, signature: 'signature-value'},
+        })
+    })
+
+    it('refuses an unsigned bundle or one signed with another key, so the existing bundle keeps running', async () => {
+        const download = createNativeWebBundleDownloader('desktop-release-2026')
+
+        await expect(download({...web, artifact: {...web.artifact, signature: null, signing_key_id: null}})).rejects.toMatchObject({code: 'candidate_changed'})
+        await expect(download({...web, artifact: {...web.artifact, signing_key_id: 'someone-else'}})).rejects.toMatchObject({code: 'candidate_changed'})
     })
 })

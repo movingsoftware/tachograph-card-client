@@ -6,7 +6,7 @@ import {createApplicationBundleClient, createLiveBundleUpdater} from 'shared.js'
 import {createBundleUpdateGate, type BundleUpdateGate, type BundleUpdateGateResult} from '../services/bundleUpdateGate'
 import {getBundleUpdaterConfiguration} from '../services/bundleUpdaterConfig'
 import {isCardActivityBusy, watchCardActivity} from '../services/cardActivity'
-import {createNativeBundleDownloader} from '../services/nativeBundleDownloader'
+import {createNativeBundleDownloader, createNativeWebBundleDownloader} from '../services/nativeBundleDownloader'
 import {
     getCurrentNativeApplicationVersion,
     getCurrentWebBundleVersion,
@@ -152,11 +152,7 @@ export const runBundleUpdateBoot = async (): Promise<void> => {
         ...clientOptions,
         runtimeTarget: 'web',
         kind: 'web',
-        // The native side downloads the zip and checks its signature, so this only hands over where it is.
-        downloader: async ({artifact, version}) => ({
-            verification: 'native-signature',
-            value: {url: artifact.download_url, version, sha256: artifact.sha256, signature: artifact.signature},
-        }),
+        downloader: createNativeWebBundleDownloader(configuration.signingKeyId),
     })
     const webUpdater = createLiveBundleUpdater({
         ...notices,
