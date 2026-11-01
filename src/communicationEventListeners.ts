@@ -1,3 +1,4 @@
+import { checkBundleUpdateManually } from './boot/bundle-updates'
 import { communicationEvents } from './services/communicationEvents'
 import { routeFlow } from './services/routeFlow'
 import { getCurrentPath, navigateTo } from './services/routerNavigation'
@@ -36,6 +37,17 @@ export const setupCommunicationEventListeners = () => {
     })
   })
 
+  const offUpdateRequired = communicationEvents.on('updateRequired', async () => {
+    await checkBundleUpdateManually()
+
+    routeFlow.clear()
+    await routeFlow.start('outdated', {
+      onComplete: async () => {
+        await routeFlow.start('launch')
+      },
+    })
+  })
+
   const offUnauthorized = communicationEvents.on('unauthorized', async ({ returnPath, onAuthorized }) => {
     if (routeFlow.isFlowActive('auth')) {
       return
@@ -63,7 +75,7 @@ export const setupCommunicationEventListeners = () => {
     await routeFlow.start('launch')
   })
 
-  teardownHandlers = [offOffline, offMaintenance, offOutdated, offUnauthorized, offForbidden]
+  teardownHandlers = [offOffline, offMaintenance, offOutdated, offUpdateRequired, offUnauthorized, offForbidden]
 }
 
 export const teardownCommunicationEventListeners = () => {
