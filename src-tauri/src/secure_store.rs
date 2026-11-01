@@ -1,4 +1,4 @@
-// Device and session bearers kept in the operating system's credential store.
+// Bearer tokens and the pending approval kept in the operating system's credential store.
 use keyring::{Entry, Error};
 
 const SERVICE: &str = "com.transportklok.tcc";

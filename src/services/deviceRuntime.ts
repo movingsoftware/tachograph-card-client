@@ -1,7 +1,8 @@
 import {getVersion} from '@tauri-apps/api/app'
 import {isTauri} from '@tauri-apps/api/core'
 import {arch as getNativeArchitecture, platform as getNativePlatform} from '@tauri-apps/plugin-os'
-import type {DeviceRegistrationPayload, UpdateDevicePayload} from './auth'
+import type {UpdateDevicePayload} from 'shared.js'
+import type {DeviceRegistrationPayload} from './auth'
 
 const BUNDLED_APP_VERSION = import.meta.env.VITE_APP_VERSION
 
@@ -122,8 +123,9 @@ export const getDeviceRuntimeInfo = (): {version: string; target: string} => ({
 /** Creates a random version 4 UUID; `crypto.randomUUID` is missing from the Safari 14 webviews this app supports. */
 const randomUuid = (): string => {
     const bytes = crypto.getRandomValues(new Uint8Array(16))
-    bytes[6] = (bytes[6] & 0x0f) | 0x40
-    bytes[8] = (bytes[8] & 0x3f) | 0x80
+    const view = new DataView(bytes.buffer)
+    view.setUint8(6, (view.getUint8(6) & 0x0f) | 0x40)
+    view.setUint8(8, (view.getUint8(8) & 0x3f) | 0x80)
     const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')
     return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
 }

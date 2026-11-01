@@ -11,14 +11,21 @@ import { communicationEvents } from '../services/communicationEvents'
 import { useFleet } from '../composables/useFleet'
 import { invoke } from '@tauri-apps/api/core'
 import { Notify } from 'quasar'
+import { openUrl } from '@tauri-apps/plugin-opener'
 import {
+    getCurrentDeviceRegistrationPayload,
     getCurrentDeviceVersionUpdatePayload,
     getCurrentRuntimeVersionSignature,
 } from '../services/deviceRuntime'
 
 vi.mock('quasar', () => ({ Notify: { create: vi.fn() } }))
 vi.mock('@tauri-apps/plugin-opener', () => ({ openUrl: vi.fn() }))
-vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }))
+const tauri = vi.hoisted(() => ({ keychain: new Map<string, string>(), native: vi.fn() }))
+
+vi.mock('@tauri-apps/api/core', async () => {
+    const { withKeychain } = await import('./support/keychain')
+    return { invoke: vi.fn(withKeychain(tauri.keychain, tauri.native)) }
+})
 vi.mock('../services/routerNavigation', () => ({ getCurrentPath: () => '/' }))
 vi.mock('../services/deviceRuntime', () => ({
     getCurrentDeviceRegistrationPayload: vi.fn(),
@@ -32,6 +39,10 @@ vi.mock('../stores/useFlespiStore', () => ({
         setServerConfigFromBackend: vi.fn(),
     }),
 }))
+
+beforeEach(() => {
+    tauri.keychain.clear()
+})
 
 const ok = (config: ApiRequestConfig, data: unknown = {}) => ({
     status: 200, data, headers: {}, config, statusText: 'OK',
@@ -473,7 +484,7 @@ describe('TCC scoped authentication with the installed shared.js package', () =>
             fleetApi.defaults.adapter = (config) => Promise.resolve(ok(config, { data: [] }))
             const sync = useFleet().syncCards({ CARD: { id: 'local', name: 'Local', iccid: '' } })
             await expect(sync).rejects.toMatchObject({ code: 'ERR_AUTH_SESSION_INVALIDATED' })
-            expect(invoke).not.toHaveBeenCalled()
+            expect(tauri.native).not.toHaveBeenCalled()
         } finally {
             fleetApi.interceptors.response.eject(interceptor)
         }
@@ -485,7 +496,7 @@ describe('TCC scoped authentication with the installed shared.js package', () =>
         await fleet.authSession.ensure()
         let release!: () => void
         const gate = new Promise<void>((resolve) => { release = resolve })
-        const native = vi.mocked(invoke)
+        const native = tauri.native
         native.mockImplementationOnce(async () => gate)
         fleetApi.defaults.adapter = (config) => Promise.resolve(ok(config, { data: [] }))
 
@@ -610,5 +621,160 @@ describe('TCC scoped authentication with the installed shared.js package', () =>
         } finally {
             fleetApi.interceptors.response.eject(interceptor)
         }
+    })
+})
+
+describe('TCC browser sign-in on the app host', () => {
+    beforeEach(() => {
+        localStorage.clear()
+        setActivePinia(createPinia())
+        vi.clearAllMocks()
+        vi.mocked(getCurrentDeviceRegistrationPayload).mockReturnValue({
+            device_name: 'Tachograph desk',
+            device_platform: 'windows',
+            os_version: '11',
+            application_version: '1.0.0',
+            device_manufacturer: null,
+            device_model: null,
+            installation_id: 'installation-1',
+        })
+    })
+
+    it('opens the approval page on the app host and redeems its own device and session tokens from the API host', async () => {
+        const approvalUrl = 'https://app.transportklok.nl/auth/device/approval/7'
+        const apiHosts = new Set<string>()
+        let approved = false
+        api.defaults.adapter = (config) => {
+            apiHosts.add(new URL(String(config.baseURL)).origin)
+            if (config.url === '/auth/device/authentication-token') {
+                expect(JSON.parse(String(config.data))).toMatchObject({ mode: 'web' })
+                return Promise.resolve(ok(config, { token: 'pending-login', url: approvalUrl }))
+            }
+            if (config.url === '/auth/device/authentication-token/check') {
+                expect(config.params).toEqual({ token: 'pending-login' })
+                return Promise.resolve(ok(config, { success: approved }))
+            }
+            if (config.url === '/auth/device' && config.method === 'post') {
+                expect(JSON.parse(String(config.data))).toMatchObject({ token: 'pending-login', device_name: 'Tachograph desk', device_platform: 'windows', os_version: '11', application_version: '1.0.0' })
+                return Promise.resolve(ok(config, { data: {}, token: 'own-device' }))
+            }
+            if (config.url === '/auth/session') {
+                expect(config.headers.Authorization).toBe('Bearer own-device')
+                return Promise.resolve(ok(config, { token: 'own-session' }))
+            }
+            return Promise.resolve(ok(config))
+        }
+        const auth = useAuthStore()
+
+        await auth.connect()
+        expect(openUrl).toHaveBeenCalledWith(approvalUrl)
+
+        await auth.checkStatusOnFocus()
+        expect(auth.deviceToken).toBeNull()
+
+        approved = true
+        await auth.checkStatusOnFocus()
+
+        expect(auth.deviceToken).toBe('own-device')
+        expect(auth.sessionToken).toBe('own-session')
+        expect(invoke).toHaveBeenCalledWith('secure_store_set', { key: 'transportklok_device_token', value: 'own-device' })
+        expect(invoke).toHaveBeenCalledWith('secure_store_set', { key: 'transportklok_session_token', value: 'own-session' })
+        expect(apiHosts).toEqual(new Set(['https://api.transportklok.nl']))
+    })
+
+    it('refuses to open a sign-in link outside the app host', async () => {
+        api.defaults.adapter = (config) => Promise.resolve(ok(config, {
+            token: 'pending-login',
+            url: 'https://api.transportklok.nl/auth/device/token/pending-login',
+        }))
+        const auth = useAuthStore()
+
+        await auth.connect()
+
+        expect(openUrl).not.toHaveBeenCalled()
+        expect(auth.statusMessage).toBe('De aanmeldlink hoort niet bij TransportKlok.')
+    })
+})
+
+describe('TCC credentials in the OS credential store across restarts', () => {
+    const keychain = tauri.keychain
+
+    beforeEach(() => {
+        localStorage.clear()
+        setActivePinia(createPinia())
+        vi.clearAllMocks()
+    })
+
+    it('moves the legacy device and session tokens once and keeps the user signed in', async () => {
+        localStorage.setItem('transportklok_device_token', 'legacy-device')
+        localStorage.setItem('transportklok_session_token', 'legacy-session')
+        localStorage.setItem('fleet_token', 'platform-copy')
+        api.defaults.adapter = (config) => Promise.reject(reject(config, 500))
+        const auth = useAuthStore()
+
+        await auth.initializeConnection()
+
+        expect(auth.deviceToken).toBe('legacy-device')
+        expect(auth.sessionToken).toBe('legacy-session')
+        expect(keychain.get('transportklok_device_token')).toBe('legacy-device')
+        expect(keychain.get('transportklok_session_token')).toBe('legacy-session')
+        expect(localStorage.getItem('transportklok_device_token')).toBeNull()
+        expect(localStorage.getItem('transportklok_session_token')).toBeNull()
+        expect(localStorage.getItem('fleet_token')).toBeNull()
+        expect([...keychain.values()]).not.toContain('platform-copy')
+    })
+
+    it('keeps the issued fleet credential and restores it after a restart', async () => {
+        localStorage.setItem('transportklok_device_token', 'device')
+        localStorage.setItem('transportklok_session_token', 'platform')
+        setupPlatform()
+        await useFleetAuthStore().authSession.ensure()
+        await vi.waitFor(() => expect(keychain.get('transportklok_fleet_credential')).toBeDefined())
+
+        setActivePinia(createPinia())
+        localStorage.removeItem('transportklok_device_token')
+        localStorage.removeItem('transportklok_session_token')
+        keychain.set('transportklok_device_token', 'device')
+        keychain.set('transportklok_session_token', 'platform')
+        api.defaults.adapter = (config) => Promise.reject(reject(config, 500))
+        await useAuthStore().initializeConnection()
+
+        expect(useFleetAuthStore().token).toBe('fleet-1')
+        expect(useFleetAuthStore().companyId).toBe('company')
+    })
+
+    it('resumes a pending browser approval after a restart', async () => {
+        keychain.set('transportklok_connection_state', JSON.stringify({ pendingToken: 'pending-login', startedAt: Date.now() - 1000 }))
+        vi.mocked(getCurrentDeviceRegistrationPayload).mockReturnValue({
+            device_name: 'Tachograph desk',
+            device_platform: 'windows',
+            os_version: '11',
+            application_version: '1.0.0',
+            device_manufacturer: null,
+            device_model: null,
+            installation_id: 'installation-1',
+        })
+        api.defaults.adapter = (config) => {
+            if (config.url === '/auth/device/authentication-token/check') {
+                return Promise.resolve(ok(config, { success: true }))
+            }
+            if (config.url === '/auth/device' && config.method === 'post') {
+                return Promise.resolve(ok(config, { data: {}, token: 'own-device' }))
+            }
+            if (config.url === '/auth/session') {
+                return Promise.resolve(ok(config, { token: 'own-session' }))
+            }
+            return Promise.reject(reject(config, 500))
+        }
+        const auth = useAuthStore()
+
+        await auth.initializeConnection()
+        expect(auth.pendingToken).toBe('pending-login')
+
+        await auth.checkStatusOnFocus()
+
+        expect(auth.deviceToken).toBe('own-device')
+        expect(auth.sessionToken).toBe('own-session')
+        expect(keychain.get('transportklok_device_token')).toBe('own-device')
     })
 })

@@ -5,6 +5,7 @@ import api from '../services/api'
 import { fleetApi } from '../services/fleet'
 import { useFleetAuthStore } from '../stores/useFleetAuthStore'
 import type { SmartCard } from '../components/models'
+import { withKeychain } from './support/keychain'
 
 const state = vi.hoisted(() => ({
     emit: null as ((event: 'add-card' | 'update-card' | 'delete-card', ...args: unknown[]) => void) | null,
@@ -143,14 +144,14 @@ describe('TachoMainComponent fleet operation ownership', () => {
             }
             return Promise.resolve(ok(config, { id: 'created-card', data: [] }))
         }
-        state.invoke.mockImplementation((command: string) => {
+        state.invoke.mockImplementation(withKeychain(new Map(), (command: string) => {
             state.nativeCalls.push(command)
             if (command === 'update_card') {
                 state.started = true
                 return new Promise<void>((resolve) => { state.release = resolve })
             }
             return Promise.resolve(undefined)
-        })
+        }))
         await useFleetAuthStore().authSession.ensure()
     })
 

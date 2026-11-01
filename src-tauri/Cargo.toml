@@ -45,7 +45,7 @@ base64 = "0.22"
 minisign-verify = "0.2"
 sha2 = "0.10"
 zip = { version = "4", default-features = false, features = ["deflate-flate2"] }
-keyring = { version = "3", features = ["apple-native", "windows-native", "linux-native"] }
+keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service", "crypto-rust"] }
 
 [dev-dependencies]
 tauri = { version = "2.2.4", features = ["tray-icon", "test"] }
