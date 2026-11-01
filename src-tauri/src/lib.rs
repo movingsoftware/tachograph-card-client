@@ -5,6 +5,7 @@ mod config; // Configuration handling.
 mod global_app_handle;
 mod logger; // Logging functionality.
 mod mqtt; // MQTT communication.
+mod secure_store; // OS credential store for bearer tokens.
 mod web_bundle; // Installed web bundle served with the embedded one as fallback, rolled back when its launch fails.
 mod web_bundle_install; // Verifies and unpacks a downloaded web bundle zip.
 mod smart_card; // PCSC module for smart card operations. // Global access to app state and emitters.
@@ -113,6 +114,9 @@ pub fn run() {
             web_bundle::install_web_bundle, // download, verify and stage a signed web bundle
             web_bundle::bundle_ready,       // confirm the running web bundle started
             web_bundle::web_bundle_status,  // report installed web bundles and rollbacks
+            secure_store::secure_store_get,
+            secure_store::secure_store_set,
+            secure_store::secure_store_remove,
         ])
         .run(context)
         .expect("error while running tauri application");
