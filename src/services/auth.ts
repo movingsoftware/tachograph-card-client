@@ -1,49 +1,18 @@
 import { createAuthService } from 'shared.js'
+import type { DeviceRegistrationPayload as SharedDeviceRegistrationPayload } from 'shared.js'
 import api from './api'
 
-export interface DeviceRegistrationPayload {
-    device_name: string
-    device_platform?: string
-    device_model?: string
-    os_version?: string
-    application_version?: string
-    device_manufacturer?: string
-    installation_id?: string
-}
-
-export interface LoginPayload {
-    email: string
-    password: string
-}
-
-export interface AuthenticationTokenResponse {
-    token: string
-    '2fa_enabled': boolean
-    url?: string
-}
-
-export interface AuthResponse {
-    token: string
-}
-
-export interface SessionResponse {
-    token: string
-}
-
-export interface UpdateDevicePayload {
-    application_version: string
-    name: string
-    os_version: string
-    fcm_token?: string | null
-}
-
-export interface TwoFactorChallengePayload {
-    token: string
-    code?: string | null
-    recovery_code?: string | null
-}
+/** The device registration body, with the installation id the card reader adds. */
+export type DeviceRegistrationPayload = SharedDeviceRegistrationPayload & { installation_id: string }
 
 const applicationKey = (import.meta as { env: Record<string, string> }).env.VITE_APP_KEY || ''
+
+const appOrigin = new URL(
+    (import.meta as { env: Record<string, string> }).env.VITE_TRANSPORTKLOK_APP_URL || 'https://app.transportklok.nl',
+).origin
+
+/** Tells whether a browser sign-in link opens on the TransportKlok app host. */
+export const opensOnAppHost = (url: string): boolean => URL.canParse(url) && new URL(url).origin === appOrigin
 
 export const authService = createAuthService({
     getApplicationKey: () => applicationKey,

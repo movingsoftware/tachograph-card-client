@@ -7,6 +7,7 @@ import {
     createSession,
     deleteDevice,
     getCurrentUser,
+    opensOnAppHost,
     requestAuthenticationTokenByWebLogin,
     updateDevice,
 } from '../services/auth'
@@ -505,6 +506,10 @@ export const useAuthStore = defineStore('auth', () => {
                 throw new Error(response.message || 'Kan de aanmelding niet starten.')
             }
 
+            if (!opensOnAppHost(response.url)) {
+                throw new Error('De aanmeldlink hoort niet bij TransportKlok.')
+            }
+
             pendingToken.value = response.authenticationToken
             pollStartedAt.value = Date.now()
             persistConnectionState()
@@ -559,6 +564,7 @@ export const useAuthStore = defineStore('auth', () => {
     const restoreSecrets = async () => {
         deviceToken.value = await readSecret(DEVICE_TOKEN_KEY)
         sessionToken.value = await readSecret(SESSION_TOKEN_KEY)
+        await useFleetAuthStore().restore()
     }
 
     const initializeConnection = async () => {

@@ -14,21 +14,26 @@ const state = vi.hoisted(() => ({
     gates: {} as Record<string, NativeGate | undefined>,
     immediate: false,
     issueCount: 0,
+    keychain: new Map<string, string>(),
 }))
 
-vi.mock('@tauri-apps/api/core', () => ({
-    invoke: vi.fn((command: string) => {
-        state.calls.push(command)
+vi.mock('@tauri-apps/api/core', async () => {
+    const { withKeychain } = await import('./support/keychain')
 
-        if (state.immediate) {
-            return Promise.resolve(undefined)
-        }
+    return {
+        invoke: vi.fn(withKeychain(state.keychain, (command: string) => {
+            state.calls.push(command)
 
-        return new Promise<void>((resolve, reject) => {
-            state.gates[command] = { resolve, reject }
-        })
-    }),
-}))
+            if (state.immediate) {
+                return Promise.resolve(undefined)
+            }
+
+            return new Promise<void>((resolve, reject) => {
+                state.gates[command] = { resolve, reject }
+            })
+        })),
+    }
+})
 
 const response = <Config>(config: Config, data: unknown = {}) => ({
     status: 200,
@@ -106,6 +111,7 @@ describe('Flespi native setup operation ownership', () => {
         state.gates = {}
         state.immediate = false
         state.issueCount = 0
+        state.keychain.clear()
         setActivePinia(createPinia())
         api.defaults.adapter = (config) => {
             expect(config.url).toBe('/actions/management/fleet/tokens')
