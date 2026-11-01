@@ -2,15 +2,15 @@
     <q-page class="simple-page flex column items-center justify-center text-center">
         <div class="error-card">
             <q-icon name="warning" color="warning" size="56px" />
-            <div class="text-h5 text-weight-bold q-mt-md">Update vereist</div>
+            <div class="text-h5 text-weight-bold q-mt-md">{{ texts.title }}</div>
             <div class="text-body1 text-grey-8 q-mt-sm">
-                {{ displayMessage }}
+                {{ texts.message }}
             </div>
             <q-btn
                 color="primary"
                 icon="open_in_new"
                 class="q-mt-lg"
-                label="Download nieuwste versie"
+                :label="texts.download"
                 unelevated
                 @click="openDownloadPage"
             />
@@ -18,7 +18,7 @@
                 color="secondary"
                 flat
                 class="q-mt-sm"
-                label="Opnieuw controleren"
+                :label="texts.retry"
                 @click="retryLaunch"
             />
         </div>
@@ -26,25 +26,19 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
-import { storeToRefs } from 'pinia'
 import { useRouteFlow } from 'src/composables/useRouteFlow'
 import { useAppStore } from 'stores/useAppStore'
 import { openUrl } from '@tauri-apps/plugin-opener'
+import { updateRequiredTexts } from 'src/services/updateRequiredTexts'
 
 defineOptions({
     name: 'ErrorOutdatedPage',
 })
 
 const appStore = useAppStore()
-const { outdatedMessage } = storeToRefs(appStore)
 const { start, currentFlow } = useRouteFlow()
 
-const displayMessage = computed(
-    () =>
-        outdatedMessage.value ||
-        'Deze versie van de applicatie is verouderd. Download de nieuwste versie om door te gaan.',
-)
+const texts = updateRequiredTexts(navigator.languages)
 
 const openDownloadPage = async () => {
     await openUrl('https://app.transportklok.nl/management/fleet/telematics')
