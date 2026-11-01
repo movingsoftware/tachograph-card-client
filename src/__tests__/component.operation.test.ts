@@ -145,7 +145,8 @@ describe('TachoMainComponent fleet operation ownership', () => {
             return Promise.resolve(ok(config, { id: 'created-card', data: [] }))
         }
         state.invoke.mockImplementation(withKeychain(new Map(), (command: string) => {
-            state.nativeCalls.push(command)
+            // The bundle trial confirm is no card call; its own tests assert it through state.invoke.
+            if (command !== 'bundle_ready') state.nativeCalls.push(command)
             if (command === 'update_card') {
                 state.started = true
                 return new Promise<void>((resolve) => { state.release = resolve })

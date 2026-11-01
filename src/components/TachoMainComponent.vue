@@ -117,7 +117,7 @@ import SmartCardList from './SmartCardList.vue'
 import type { SmartCard, Reader } from './models'
 import { onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
-import { Notify } from 'quasar'
+import { confirmWebBundle } from '../services/webBundleTrial'
 import { listen, emit, type UnlistenFn } from '@tauri-apps/api/event'
 import { useFleet, type FleetOperation } from '../composables/useFleet'
 import { useFleetAuthStore } from '../stores/useFleetAuthStore'
@@ -461,23 +461,6 @@ void registerListener('global-config-server', () => {
 const handleFocus = () => {
   if (bootstrapOpen || disposed) return
   void syncTrackmijnCards()
-}
-
-// Tell the native side this web bundle started, so it is not rolled back at the next launch, and report a rollback.
-const confirmWebBundle = async (): Promise<void> => {
-  try {
-    const rolledBack = await invoke<string | null>('bundle_ready')
-    if (rolledBack) {
-      Notify.create({
-        type: 'warning',
-        message: `Update ${rolledBack} kon niet starten en is teruggedraaid.`,
-        caption: 'De vorige versie van de applicatie wordt gebruikt.',
-        timeout: 0,
-      })
-    }
-  } catch (error) {
-    console.error('Error confirming the web bundle:', error)
-  }
 }
 
 onMounted(async () => {

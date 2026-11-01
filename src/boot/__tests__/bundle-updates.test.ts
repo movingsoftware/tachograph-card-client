@@ -38,7 +38,8 @@ vi.mock('../../services/deviceRuntime', () => ({
     getCurrentWebBundleVersion: () => '0.7.0',
     getInstallationId: () => 'installation-1',
 }))
-vi.mock('../../services/nativeBundleDownloader', () => ({
+vi.mock('../../services/nativeBundleDownloader', async (importOriginal) => ({
+    ...await importOriginal<typeof import('../../services/nativeBundleDownloader')>(),
     createNativeBundleDownloader: () => state.native,
 }))
 
