@@ -777,4 +777,15 @@ describe('TCC credentials in the OS credential store across restarts', () => {
         expect(auth.sessionToken).toBe('own-session')
         expect(keychain.get('transportklok_device_token')).toBe('own-device')
     })
+
+    it('drops a pending browser approval older than the polling window after a restart', async () => {
+        keychain.set('transportklok_connection_state', JSON.stringify({ pendingToken: 'stale-login', startedAt: Date.now() - 5 * 60 * 1000 }))
+        api.defaults.adapter = (config) => Promise.reject(reject(config, 500))
+        const auth = useAuthStore()
+
+        await auth.initializeConnection()
+
+        expect(auth.pendingToken).toBeNull()
+        await vi.waitFor(() => expect(keychain.has('transportklok_connection_state')).toBe(false))
+    })
 })
