@@ -1,0 +1,128 @@
+name: Signed macOS build
+
+# Proves that the macOS app is signed with the Developer ID and notarised by Apple. It publishes nothing.
+
+on:
+  pull_request:
+    paths:
+      - 'src-tauri/tauri.conf.json'
+      - 'src-tauri/entitlements.plist'
+      - 'src-tauri/Cargo.toml'
+      - '.github/workflows/macos-signed-build.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: tcc-macos-signed-build-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Sign and notarise the macOS app
+    # A fork's pull request gets no environment secrets, so it is not built here.
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: blacksmith-6vcpu-macos-latest
+    timeout-minutes: 60
+    environment: tcc-production
+    steps:
+      - name: Require the environment's names
+        env:
+          SHARED_SOURCE_REVISION: ${{ vars.SHARED_JS_SOURCE_REVISION }}
+          CROSS_REPO_READ_TOKEN: ${{ secrets.CROSS_REPO_READ_TOKEN }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ vars.APPLE_SIGNING_IDENTITY }}
+          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          [[ "$SHARED_SOURCE_REVISION" =~ ^[a-f0-9]{40}$ ]] || { echo 'SHARED_JS_SOURCE_REVISION must be a full commit SHA.' >&2; exit 1; }
+          for name in CROSS_REPO_READ_TOKEN APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_ID APPLE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_TEAM_ID; do
+            test -n "${!name:-}" || { echo "$name is required in the tcc-production environment." >&2; exit 1; }
+          done
+
+      - name: Checkout TCC
+        uses: actions/checkout@v4
+        with:
+          path: tachograph-card-client
+          persist-credentials: false
+
+      - name: Require the committed identity to be the environment's
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ vars.APPLE_SIGNING_IDENTITY }}
+        run: |
+          set -euo pipefail
+          committed="$(jq -r .bundle.macOS.signingIdentity tachograph-card-client/src-tauri/tauri.conf.json)"
+          test "$committed" = "$APPLE_SIGNING_IDENTITY" \
+            || { echo "tauri.conf.json signs as '$committed', the environment as '$APPLE_SIGNING_IDENTITY'." >&2; exit 1; }
+
+      - name: Checkout the pinned shared.js
+        uses: actions/checkout@v4
+        with:
+          repository: transportklok/shared.js
+          ref: ${{ vars.SHARED_JS_SOURCE_REVISION }}
+          token: ${{ secrets.CROSS_REPO_READ_TOKEN }}
+          path: shared.js
+          persist-credentials: false
+
+      - name: Verify exact shared source revision
+        env:
+          SHARED_SOURCE_REVISION: ${{ vars.SHARED_JS_SOURCE_REVISION }}
+        run: test "$(git -C shared.js rev-parse HEAD)" = "$SHARED_SOURCE_REVISION"
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Build shared.js
+        working-directory: shared.js
+        env:
+          npm_config_script_shell: bash
+        run: |
+          npm ci
+          npm run build
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+
+      - name: Build, sign and notarise the app
+        working-directory: tachograph-card-client
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ vars.APPLE_SIGNING_IDENTITY }}
+          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          npm ci
+          npm run tauri -- build --target aarch64-apple-darwin --bundles app,dmg
+
+      - name: Check the signature, the notarisation and the stapled ticket
+        working-directory: tachograph-card-client/src-tauri/target/aarch64-apple-darwin/release/bundle
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ vars.APPLE_SIGNING_IDENTITY }}
+        run: |
+          set -euo pipefail
+          app="$(find macos -maxdepth 1 -name '*.app' -print -quit)"
+          dmg="$(find dmg -maxdepth 1 -name '*.dmg' -print -quit)"
+          test -n "$app" && test -n "$dmg"
+          codesign --verify --deep --strict --verbose=2 "$app"
+          codesign -dvv "$app" 2>&1 | grep -Fx "Authority=$APPLE_SIGNING_IDENTITY"
+          spctl --assess --type execute -vv "$app" 2>&1 | tee assessment.txt
+          grep -F 'source=Notarized Developer ID' assessment.txt
+          xcrun stapler validate "$app"
+          codesign --verify --verbose=2 "$dmg"
+          {
+            echo "### The macOS app is signed and notarised"
+            echo '```'
+            cat assessment.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
