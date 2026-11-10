@@ -11,21 +11,35 @@ const ROOT = resolve(__dirname, '..', '..')
 type Step = {name?: string; run?: string; uses?: string; with?: Record<string, string>}
 type Job = {if?: string; needs?: string | string[]; environment?: string; steps: Step[]; outputs?: Record<string, string>}
 type Workflow = {
-    on: {push: {tags: string[]}; workflow_dispatch: {inputs: Record<string, {options?: string[]; required?: boolean}>}}
+    on?: {
+        push?: {tags?: string[]}
+        workflow_dispatch?: {inputs?: Record<string, {options?: string[]; required?: boolean}>}
+    }
     jobs: Record<string, Job>
 }
 type Context = {github: {event_name: string}; needs: {release: {outputs: {path: string}}}}
 
 const workflow = load(readFileSync(join(ROOT, '.github/workflows/publish-application-bundles.yml'), 'utf8')) as Workflow
 
-function script(job: string) {
-    return workflow.jobs[job].steps.map((step) => step.run ?? '').join('\n')
+function requiredJob(name: string): Job {
+    const selected = workflow.jobs[name]
+    if (!selected) throw new Error(`Workflow is missing job ${name}.`)
+    return selected
 }
 
-// Evaluates a job's `if` the way Actions does for the comparisons this workflow uses.
+function script(job: string) {
+    return requiredJob(job).steps.map((step) => step.run ?? '').join('\n')
+}
+
+// Evaluates the equality expressions used by this workflow without executing YAML as JavaScript.
 function condition(expression: string, context: Context) {
-    const body = expression.replace(/^\$\{\{|\}\}$/g, '').replace(/==/g, '===').replace(/!===/g, '!==')
-    return Boolean(new Function('github', 'needs', `return (${body})`)(context.github, context.needs))
+    if (expression === 'true') return true
+    const comparison = /^\$\{\{\s*(github\.event_name|needs\.release\.outputs\.path)\s*==\s*'([^']+)'\s*\}\}$/.exec(expression)
+    if (!comparison) throw new Error(`Unsupported workflow condition: ${expression}`)
+    const actual = comparison[1] === 'github.event_name'
+        ? context.github.event_name
+        : context.needs.release.outputs.path
+    return actual === comparison[2]
 }
 
 // The jobs that run for one event and one detector answer, skipping a job whose needs did not run.
@@ -43,14 +57,14 @@ function jobsThatRun(event: string, path: string) {
 
 describe('publish-application-bundles.yml path choice', () => {
     it('runs on a stable version tag and on manual widen and rollback', () => {
-        expect(workflow.on.push.tags).toEqual(['[0-9]+.[0-9]+.[0-9]+'])
-        expect(workflow.on.workflow_dispatch.inputs.action.options).toEqual(['widen', 'rollback'])
-        expect(workflow.on.workflow_dispatch.inputs.reason.required).toBe(true)
+        expect(workflow.on?.push?.tags).toEqual(['[0-9]+.[0-9]+.[0-9]+'])
+        expect(workflow.on?.workflow_dispatch?.inputs?.action?.options).toEqual(['widen', 'rollback'])
+        expect(workflow.on?.workflow_dispatch?.inputs?.reason?.required).toBe(true)
     })
 
     it('asks the native-change detector and passes its answer as the path', () => {
         expect(script('release')).toContain('node scripts/native-change.mjs')
-        expect(workflow.jobs.release.outputs?.path).toBe('${{ steps.path.outputs.path }}')
+        expect(requiredJob('release').outputs?.path).toBe('${{ steps.path.outputs.path }}')
     })
 
     it('publishes only the web bundle when the detector says web', () => {
@@ -74,7 +88,7 @@ describe('publish-application-bundles.yml web job', () => {
     const web = script('web')
 
     it('builds dist/spa, zips and minisigns it and writes the manifest with the native range', () => {
-        expect(workflow.jobs.web.environment).toBe('tcc-production')
+        expect(requiredJob('web').environment).toBe('tcc-production')
         expect(web).toContain('npm run build:release -- --web-only')
         expect(web).toContain('zip -qrX')
         expect(web).toContain('npm run tauri -- signer sign')
@@ -93,7 +107,7 @@ describe('publish-application-bundles.yml channel job', () => {
     it('widens or rolls back through Platform with the reason passed as task environment', () => {
         const channel = script('channel')
 
-        expect(workflow.jobs.channel.environment).toBe('tcc-production')
+        expect(requiredJob('channel').environment).toBe('tcc-production')
         expect(channel).toContain('applications:bundles:widen "$BUNDLE_APP" "$BUNDLE_CHANNEL" "$BUNDLE_PERCENT"')
         expect(channel).toContain('applications:bundles:rollback "$BUNDLE_APP" "$BUNDLE_CHANNEL"')
         expect(channel).toContain('"BUNDLE_REASON=$REASON"')
@@ -134,7 +148,16 @@ esac
         chmodSync(join(dir, 'aws'), 0o755)
         return spawnSync('bash', [join(ROOT, 'scripts/platform-artisan.sh'), ...args], {
             encoding: 'utf8',
-            env: {PATH: `${dir}:${process.env.PATH}`, PLATFORM_ECS_CLUSTER: 'c', PLATFORM_ECS_SERVICE: 's', AWS_REGION: 'eu-west-2'},
+            env: {
+                PATH: `${dir}:${process.env.PATH}`,
+                NODE_ENV: 'test',
+                VUE_ROUTER_MODE: 'hash',
+                VUE_ROUTER_BASE: '/',
+                VITE_APP_VERSION: '0.0.0',
+                PLATFORM_ECS_CLUSTER: 'c',
+                PLATFORM_ECS_SERVICE: 's',
+                AWS_REGION: 'eu-west-2',
+            },
         })
     }
 

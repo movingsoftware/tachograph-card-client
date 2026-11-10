@@ -14,8 +14,8 @@ describe('launch route flow', () => {
 
     it('checks for bundle updates before the auth flow lets the user in', async () => {
         const order: string[] = []
-        state.check.mockImplementation(async () => { order.push('check-bundle-update'); return 'continue' })
-        const startChildFlow = vi.fn(async () => { order.push('auth') })
+        state.check.mockImplementation(() => { order.push('check-bundle-update'); return Promise.resolve('continue') })
+        const startChildFlow = vi.fn(() => { order.push('auth'); return Promise.resolve() })
         const {createLaunchRouteFlow} = await import('../launchRouteFlow')
 
         await createLaunchRouteFlow({startChildFlow} as never).start()

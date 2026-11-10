@@ -38,9 +38,9 @@ export interface NativeWebBundle {
 }
 
 /** Hands over a web bundle only when the manifest signs it with this build's key. */
-export const createNativeWebBundleDownloader = (signingKeyId: string) => async (
+export const createNativeWebBundleDownloader = (signingKeyId: string) => (
     {artifact, version}: ApplicationBundleDownloadDescriptor,
-): Promise<ApplicationBundleDownloadResult<NativeWebBundle>> => {
+): Promise<ApplicationBundleDownloadResult<NativeWebBundle>> => Promise.resolve().then(() => {
     if (!artifact.signature || artifact.signing_key_id !== signingKeyId) {
         throw new ApplicationBundleError('candidate_changed', 'The web bundle is not signed with this build\'s key.')
     }
@@ -48,7 +48,7 @@ export const createNativeWebBundleDownloader = (signingKeyId: string) => async (
         verification: 'native-signature',
         value: {url: artifact.download_url, version, sha256: artifact.sha256, signature: artifact.signature},
     }
-}
+})
 
 const sizeError = (): ApplicationBundleError => new ApplicationBundleError('size_mismatch', 'Native updater download size did not match release metadata.')
 

@@ -40,15 +40,21 @@ function readWorkflow(name: string) {
 
 function findStep(job: WorkflowJob, name: string) {
     const step = job.steps.find((candidate) => candidate.name === name)
-    expect(step, 'workflow step ' + name).toBeDefined()
-    return step!
+    if (!step) throw new Error(`Workflow step ${name} is missing.`)
+    return step
 }
 
 function sharedCheckout(job: WorkflowJob) {
     const step = job.steps.find((candidate) => candidate.uses === 'actions/checkout@v4'
         && candidate.with?.repository === 'transportklok/shared.js')
-    expect(step, 'shared.js checkout').toBeDefined()
-    return step!
+    if (!step) throw new Error('Workflow step for the shared.js checkout is missing.')
+    return step
+}
+
+function requiredJob(workflow: WorkflowDocument, name: string): WorkflowJob {
+    const selected = workflow.jobs[name]
+    if (!selected) throw new Error(`Workflow job ${name} is missing.`)
+    return selected
 }
 
 function expression(value: string) {
@@ -61,9 +67,14 @@ describe('TCC shared.js source workflow contract', () => {
     const release = readWorkflow('release.yml')
 
     it('uses the one resolver and exact resolved SHA in all three workflows', () => {
-        const macosResolver = findStep(macos.workflow.jobs.build, 'Resolve shared.js source')
-        const releaseResolver = findStep(publish.workflow.jobs.release, 'Resolve shared.js source')
-        const installerResolver = findStep(release.workflow.jobs.resolve_shared_source, 'Resolve shared.js source')
+        const macosBuild = requiredJob(macos.workflow, 'build')
+        const publishRelease = requiredJob(publish.workflow, 'release')
+        const publishWeb = requiredJob(publish.workflow, 'web')
+        const releaseResolverJob = requiredJob(release.workflow, 'resolve_shared_source')
+        const installerJob = requiredJob(release.workflow, 'publish-tauri')
+        const macosResolver = findStep(macosBuild, 'Resolve shared.js source')
+        const releaseResolver = findStep(publishRelease, 'Resolve shared.js source')
+        const installerResolver = findStep(releaseResolverJob, 'Resolve shared.js source')
 
         expect(macosResolver.id).toBe('shared')
         expect(macosResolver.run).toContain('scripts/resolve-shared-js-source.mjs')
@@ -72,23 +83,23 @@ describe('TCC shared.js source workflow contract', () => {
         expect(installerResolver.id).toBe('shared')
         expect(installerResolver.run).toContain('scripts/resolve-shared-js-source.mjs release')
 
-        expect(sharedCheckout(macos.workflow.jobs.build).with?.ref)
+        expect(sharedCheckout(macosBuild).with?.ref)
             .toBe(expression('steps.shared.outputs.shared_source_sha'))
-        expect(sharedCheckout(publish.workflow.jobs.web).with?.ref)
+        expect(sharedCheckout(publishWeb).with?.ref)
             .toBe(expression('needs.release.outputs.shared_source_sha'))
-        expect(sharedCheckout(release.workflow.jobs['publish-tauri']).with?.ref)
+        expect(sharedCheckout(installerJob).with?.ref)
             .toBe(expression('needs.resolve_shared_source.outputs.shared_source_sha'))
 
-        expect(findStep(macos.workflow.jobs.build, 'Checkout TCC').with?.ref).toBe(expression('github.sha'))
-        expect(findStep(publish.workflow.jobs.web, 'Checkout TCC').with?.ref)
+        expect(findStep(macosBuild, 'Checkout TCC').with?.ref).toBe(expression('github.sha'))
+        expect(findStep(publishWeb, 'Checkout TCC').with?.ref)
             .toBe(expression('needs.release.outputs.tcc_source_sha'))
-        expect(findStep(release.workflow.jobs['publish-tauri'], 'Checkout TCC').with?.ref)
+        expect(findStep(installerJob, 'Checkout TCC').with?.ref)
             .toBe(expression('needs.resolve_shared_source.outputs.tcc_source_sha'))
 
         for (const job of [
-            macos.workflow.jobs.build,
-            publish.workflow.jobs.web,
-            release.workflow.jobs['publish-tauri'],
+            macosBuild,
+            publishWeb,
+            installerJob,
         ]) {
             const verify = job.steps.find((step) => step.name === 'Verify exact shared.js commit')
             const verifyTcc = job.steps.find((step) => step.name === 'Verify checked-out TCC revision'
@@ -100,9 +111,9 @@ describe('TCC shared.js source workflow contract', () => {
         }
 
         for (const job of [
-            macos.workflow.jobs.build,
-            publish.workflow.jobs.release,
-            release.workflow.jobs.resolve_shared_source,
+            macosBuild,
+            publishRelease,
+            releaseResolverJob,
         ]) {
             const sourceEvidence = job.steps.find((step) => step.uses === 'actions/upload-artifact@v4'
                 && step.with?.name === 'shared-js-source')
@@ -111,44 +122,51 @@ describe('TCC shared.js source workflow contract', () => {
     })
 
     it('selects main for development PRs into main and release pins for tagged installer work', () => {
-        const mode = findStep(macos.workflow.jobs.build, 'Choose shared.js source mode')
+        const macosBuild = requiredJob(macos.workflow, 'build')
+        const releaseResolverJob = requiredJob(release.workflow, 'resolve_shared_source')
+        const mode = findStep(macosBuild, 'Choose shared.js source mode')
 
         expect(mode.run).toContain('GITHUB_EVENT_NAME')
         expect(mode.run).toContain('GITHUB_BASE_REF')
         expect(mode.run).toContain('GITHUB_REF_TYPE')
         expect(mode.run).toContain('development')
         expect(mode.run).toContain('release')
-        expect(findStep(macos.workflow.jobs.build, 'Resolve shared.js source').run)
+        expect(findStep(macosBuild, 'Resolve shared.js source').run)
             .toContain('node scripts/resolve-shared-js-source.mjs "$SHARED_SOURCE_MODE"')
-        expect(findStep(release.workflow.jobs.resolve_shared_source, 'Resolve shared.js source').run)
+        expect(findStep(releaseResolverJob, 'Resolve shared.js source').run)
             .toContain('scripts/resolve-shared-js-source.mjs release')
     })
 
     it('keeps release identity, protected signing environments, and channel-only actions', () => {
-        const releaseGuard = findStep(publish.workflow.jobs.release, 'Check the tag is on main and equals package.json')
-        const channel = publish.workflow.jobs.channel
+        const macosBuild = requiredJob(macos.workflow, 'build')
+        const publishRelease = requiredJob(publish.workflow, 'release')
+        const publishWeb = requiredJob(publish.workflow, 'web')
+        const channel = requiredJob(publish.workflow, 'channel')
+        const releaseResolverJob = requiredJob(release.workflow, 'resolve_shared_source')
+        const installerJob = requiredJob(release.workflow, 'publish-tauri')
+        const releaseGuard = findStep(publishRelease, 'Check the tag is on main and equals package.json')
         const channelText = channel.steps.map((step) => step.run ?? '').join('\n')
 
         expect(publish.workflow.on.push?.tags).toEqual(['[0-9]+.[0-9]+.[0-9]+'])
         expect(releaseGuard.run).toContain('git merge-base --is-ancestor "$GITHUB_SHA" origin/main')
         expect(releaseGuard.run).toContain('test "$version" = "$tag"')
-        expect(publish.workflow.jobs.release.environment).toBe('tcc-production')
-        expect(publish.workflow.jobs.web.environment).toBe('tcc-production')
-        expect(macos.workflow.jobs.build.environment).toBe('tcc-production')
-        expect(findStep(macos.workflow.jobs.build, "Require the committed identity to be the environment's").run)
+        expect(publishRelease.environment).toBe('tcc-production')
+        expect(publishWeb.environment).toBe('tcc-production')
+        expect(macosBuild.environment).toBe('tcc-production')
+        expect(findStep(macosBuild, "Require the committed identity to be the environment's").run)
             .toContain('APPLE_SIGNING_IDENTITY')
-        expect(findStep(macos.workflow.jobs.build, 'Check the signature, the notarisation and the stapled ticket').run)
+        expect(findStep(macosBuild, 'Check the signature, the notarisation and the stapled ticket').run)
             .toContain('codesign --verify')
         expect(channelText).toContain('applications:bundles:widen')
         expect(channelText).toContain('applications:bundles:rollback')
         expect(channelText).not.toContain('resolve-shared-js-source.mjs')
         expect(release.workflow.on.push?.branches).toEqual(['master'])
-        expect(release.workflow.jobs.resolve_shared_source.environment).toBe('tcc-production')
-        expect(release.workflow.jobs['publish-tauri'].environment).toBe('tcc-production')
+        expect(releaseResolverJob.environment).toBe('tcc-production')
+        expect(installerJob.environment).toBe('tcc-production')
         expect(release.source).toContain('releaseDraft: true')
-        expect(findStep(macos.workflow.jobs.build, 'Resolve shared.js source').env?.CROSS_REPO_READ_TOKEN)
+        expect(findStep(macosBuild, 'Resolve shared.js source').env?.CROSS_REPO_READ_TOKEN)
             .toBe(expression('secrets.CROSS_REPO_READ_TOKEN'))
-        expect(findStep(release.workflow.jobs.resolve_shared_source, 'Resolve shared.js source').env?.CROSS_REPO_READ_TOKEN)
+        expect(findStep(releaseResolverJob, 'Resolve shared.js source').env?.CROSS_REPO_READ_TOKEN)
             .toBe(expression('secrets.CROSS_REPO_READ_TOKEN'))
     })
 
@@ -157,9 +175,9 @@ describe('TCC shared.js source workflow contract', () => {
         expect(packageJson.dependencies['shared.js']).toBe('file:../shared.js')
 
         for (const job of [
-            macos.workflow.jobs.build,
-            publish.workflow.jobs.web,
-            release.workflow.jobs['publish-tauri'],
+            requiredJob(macos.workflow, 'build'),
+            requiredJob(publish.workflow, 'web'),
+            requiredJob(release.workflow, 'publish-tauri'),
         ]) {
             const tcc = job.steps.find((step) => step.uses === 'actions/checkout@v4'
                 && step.with?.path === 'tachograph-card-client')
@@ -172,9 +190,9 @@ describe('TCC shared.js source workflow contract', () => {
     })
 
     it('records source evidence as an artifact and passes the same SHA to web and native handoff', () => {
-        const publishRelease = publish.workflow.jobs.release
-        const web = publish.workflow.jobs.web
-        const native = publish.workflow.jobs.native
+        const publishRelease = requiredJob(publish.workflow, 'release')
+        const web = requiredJob(publish.workflow, 'web')
+        const native = requiredJob(publish.workflow, 'native')
         const webManifest = findStep(web, 'Write the manifest with the native range')
         const nativeSummary = findStep(native, 'Raise the native baseline to this release').run ?? ''
 

@@ -10,9 +10,9 @@ const state = vi.hoisted(() => ({
 }))
 
 vi.mock('../boot/bundle-updates', () => ({
-    checkBundleUpdateManually: async () => {
+    checkBundleUpdateManually: () => {
         state.order.push('check')
-        return state.checkManually()
+        return Promise.resolve(state.checkManually())
     },
 }))
 vi.mock('../services/communicationEvents', () => ({
@@ -26,9 +26,9 @@ vi.mock('../services/communicationEvents', () => ({
 vi.mock('../services/routeFlow', () => ({
     routeFlow: {
         clear: () => state.clear(),
-        start: async (...args: unknown[]) => {
+        start: (...args: unknown[]) => {
             state.order.push('start')
-            return state.start(...args)
+            return Promise.resolve(state.start(...args))
         },
         isFlowActive: () => false,
     },
