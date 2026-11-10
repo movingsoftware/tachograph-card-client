@@ -119,7 +119,7 @@ describe('TCC shared.js source workflow contract', () => {
         expect(mode.run).toContain('development')
         expect(mode.run).toContain('release')
         expect(findStep(macos.workflow.jobs.build, 'Resolve shared.js source').run)
-            .toContain('node scripts/resolve-shared-js-source.mjs "$mode"')
+            .toContain('node scripts/resolve-shared-js-source.mjs "$SHARED_SOURCE_MODE"')
         expect(findStep(release.workflow.jobs.resolve_shared_source, 'Resolve shared.js source').run)
             .toContain('scripts/resolve-shared-js-source.mjs release')
     })
