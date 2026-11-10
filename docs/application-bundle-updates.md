@@ -40,6 +40,26 @@ because continuing after a partially applied update could start work against an
 uncertain executable. The browser development adapter uses the explicitly injected
 build version and does not register native updater behavior.
 
+## Shared.js source selection
+
+CI resolves shared.js at the start of each source build. Development signed
+pull requests targeting main use `refs/heads/main` and record its exact
+commit once. Each build checks out TCC first and places shared.js beside it,
+preserving the package's `file:../shared.js` dependency.
+
+Tagged application releases and legacy master draft installers require the TCC
+commit to contain `release-dependencies.json` with a stable shared.js
+`X.Y.Z` tag. The resolver requires the annotated stable tag and records
+its peeled commit. Missing, malformed, or unavailable pins fail closed without
+falling back to main, latest, or another release line. Normal release
+preparation commits the pin; it is not a manually maintained GitHub environment
+field. The run summary and source evidence artifact record the repository, ref,
+shared.js commit, TCC commit, workflow run, and attempt.
+
+The application-bundle workflow continues to require a TCC tag on main that
+matches `package.json`. Manual channel widen and rollback actions remain
+independent of source resolution.
+
 ## Launch gate and web bundles
 
 The launch route flow starts with a `check-bundle-update` step, before the user gets

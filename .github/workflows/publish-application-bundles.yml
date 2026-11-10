@@ -40,13 +40,19 @@ jobs:
     if: ${{ github.event_name == 'push' }}
     runs-on: blacksmith-2vcpu-ubuntu-2204
     timeout-minutes: 10
+    environment: tcc-production
     outputs:
       version: ${{ steps.guard.outputs.version }}
       path: ${{ steps.path.outputs.path }}
+      shared_source_repository: ${{ steps.shared.outputs.shared_source_repository }}
+      shared_source_ref: ${{ steps.shared.outputs.shared_source_ref }}
+      shared_source_sha: ${{ steps.shared.outputs.shared_source_sha }}
+      tcc_source_sha: ${{ steps.shared.outputs.tcc_source_sha }}
     steps:
       - name: Checkout TCC
         uses: actions/checkout@v4
         with:
+          ref: ${{ github.sha }}
           fetch-depth: 0
           persist-credentials: false
 
@@ -60,6 +66,20 @@ jobs:
           git merge-base --is-ancestor "$GITHUB_SHA" origin/main || { echo "Tag $tag is not on main." >&2; exit 1; }
           test "$version" = "$tag" || { echo "Tag $tag does not equal package.json's version $version." >&2; exit 1; }
           echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve shared.js source
+        id: shared
+        env:
+          CROSS_REPO_READ_TOKEN: ${{ secrets.CROSS_REPO_READ_TOKEN }}
+        run: node scripts/resolve-shared-js-source.mjs release
+
+      - name: Keep shared.js source evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: shared-js-source
+          path: ${{ runner.temp }}/shared-js-source.json
+          if-no-files-found: error
+          retention-days: 90
 
       - name: Decide web bundle or native release
         id: path
@@ -97,7 +117,6 @@ jobs:
     steps:
       - name: Require the environment's names
         env:
-          SHARED_SOURCE_REVISION: ${{ vars.SHARED_JS_SOURCE_REVISION }}
           CROSS_REPO_READ_TOKEN: ${{ secrets.CROSS_REPO_READ_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           BUNDLE_UPDATER_API_BASE_URL: ${{ vars.BUNDLE_UPDATER_API_BASE_URL }}
@@ -105,7 +124,6 @@ jobs:
           BUNDLE_UPDATER_PUBLIC_KEY: ${{ vars.TAURI_SIGNING_PUBLIC_KEY }}
         run: |
           set -euo pipefail
-          [[ "$SHARED_SOURCE_REVISION" =~ ^[a-f0-9]{40}$ ]] || { echo 'SHARED_JS_SOURCE_REVISION must be a full commit SHA.' >&2; exit 1; }
           for name in CROSS_REPO_READ_TOKEN TAURI_SIGNING_PRIVATE_KEY BUNDLE_UPDATER_API_BASE_URL BUNDLE_UPDATER_SIGNING_KEY_ID \
             BUNDLE_UPDATER_PUBLIC_KEY APPLICATION_ID BUCKET PLATFORM_ECS_CLUSTER PLATFORM_ECS_SERVICE; do
             test -n "${!name:-}" || { echo "$name is required in the tcc-production environment." >&2; exit 1; }
@@ -114,23 +132,35 @@ jobs:
       - name: Checkout TCC
         uses: actions/checkout@v4
         with:
+          ref: ${{ needs.release.outputs.tcc_source_sha }}
           path: tachograph-card-client
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Checkout the pinned shared.js
+      - name: Verify checked-out TCC revision
+        env:
+          EXPECTED_TCC_SHA: ${{ needs.release.outputs.tcc_source_sha }}
+        run: test "$(git -C tachograph-card-client rev-parse HEAD)" = "$EXPECTED_TCC_SHA"
+
+      - name: Checkout exact shared.js source
         uses: actions/checkout@v4
         with:
           repository: transportklok/shared.js
-          ref: ${{ vars.SHARED_JS_SOURCE_REVISION }}
+          ref: ${{ needs.release.outputs.shared_source_sha }}
           token: ${{ secrets.CROSS_REPO_READ_TOKEN }}
           path: shared.js
           persist-credentials: false
 
-      - name: Verify exact shared source revision
+      - name: Verify exact shared.js commit
         env:
-          SHARED_SOURCE_REVISION: ${{ vars.SHARED_JS_SOURCE_REVISION }}
-        run: test "$(git -C shared.js rev-parse HEAD)" = "$SHARED_SOURCE_REVISION"
+          EXPECTED_SHARED_SHA: ${{ needs.release.outputs.shared_source_sha }}
+        run: test "$(git -C shared.js rev-parse HEAD)" = "$EXPECTED_SHARED_SHA"
+
+      - name: Download shared.js source evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: shared-js-source
+          path: ${{ runner.temp }}/shared-js-source
 
       - name: Set up Node
         uses: actions/setup-node@v4
@@ -176,14 +206,15 @@ jobs:
         working-directory: tachograph-card-client
         env:
           SIGNING_KEY_ID: ${{ vars.BUNDLE_UPDATER_SIGNING_KEY_ID }}
-          SHARED_SOURCE_REVISION: ${{ vars.SHARED_JS_SOURCE_REVISION }}
+          EXPECTED_TCC_SHA: ${{ needs.release.outputs.tcc_source_sha }}
+          EXPECTED_SHARED_SHA: ${{ needs.release.outputs.shared_source_sha }}
         run: |
           set -euo pipefail
           notes="$(git tag -l --format='%(contents)' "$GITHUB_REF_NAME")"
           node scripts/web-bundle.mjs --zip "$RUNNER_TEMP/tcc-web-$VERSION.zip" --signature "$RUNNER_TEMP/tcc-web-$VERSION.zip.sig" \
             --output "$RUNNER_TEMP/manifest.json" --application-id "$APPLICATION_ID" --version "$VERSION" \
             --release-notes "${notes:-TCC $VERSION}" --signing-key-id "$SIGNING_KEY_ID" \
-            --source-revision "$GITHUB_SHA" --shared-source-revision "$SHARED_SOURCE_REVISION" \
+            --source-revision "$EXPECTED_TCC_SHA" --shared-source-revision "$EXPECTED_SHARED_SHA" \
             --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT" > "$RUNNER_TEMP/keys.json"
           jq '{version, native_min, native_max, artifacts: [.artifacts[] | {file_name, size_bytes, sha256}]}' "$RUNNER_TEMP/manifest.json" | tee -a "$GITHUB_STEP_SUMMARY"
 
@@ -195,6 +226,7 @@ jobs:
             ${{ runner.temp }}/tcc-web-*.zip
             ${{ runner.temp }}/tcc-web-*.zip.sig
             ${{ runner.temp }}/manifest.json
+            ${{ runner.temp }}/shared-js-source/shared-js-source.json
           if-no-files-found: error
           retention-days: 30
 
@@ -240,12 +272,24 @@ jobs:
     timeout-minutes: 5
     env:
       VERSION: ${{ needs.release.outputs.version }}
-      SHARED_SOURCE_REVISION: ${{ vars.SHARED_JS_SOURCE_REVISION }}
+      EXPECTED_TCC_SHA: ${{ needs.release.outputs.tcc_source_sha }}
+      EXPECTED_SHARED_SHA: ${{ needs.release.outputs.shared_source_sha }}
     steps:
       - name: Checkout TCC
         uses: actions/checkout@v4
         with:
+          ref: ${{ needs.release.outputs.tcc_source_sha }}
+          fetch-depth: 0
           persist-credentials: false
+
+      - name: Verify checked-out TCC revision
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_TCC_SHA"
+
+      - name: Download shared.js source evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: shared-js-source
+          path: shared-js-source
 
       - name: Raise the native baseline to this release
         run: |
@@ -256,8 +300,10 @@ jobs:
             echo "### $VERSION is a native release"
             echo "No web bundle was published. Build and publish the native shell with Platform's \`publish-application-bundles.yml\`:"
             echo "- version: \`$VERSION\`"
-            echo "- tcc_source_revision: \`$GITHUB_SHA\`"
-            echo "- shared_source_revision: \`$SHARED_SOURCE_REVISION\`"
+            echo "- tcc_source_revision: $EXPECTED_TCC_SHA"
+            echo "- shared_source_revision: $EXPECTED_SHARED_SHA"
+            echo '- shared source resolution:'
+            cat shared-js-source/shared-js-source.json
             echo "Once it is published, open a PR into main with this native-baseline.json (the \`native-baseline\` artifact):"
             echo '```json'
             cat native-baseline.json
@@ -268,7 +314,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: native-baseline
-          path: native-baseline.json
+          path: |
+            native-baseline.json
+            shared-js-source/shared-js-source.json
           if-no-files-found: error
           retention-days: 90
 

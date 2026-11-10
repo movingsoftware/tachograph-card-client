@@ -27,9 +27,15 @@ jobs:
     timeout-minutes: 60
     environment: tcc-production
     steps:
+      - name: Checkout TCC
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          path: tachograph-card-client
+          persist-credentials: false
+
       - name: Require the environment's names
         env:
-          SHARED_SOURCE_REVISION: ${{ vars.SHARED_JS_SOURCE_REVISION }}
           CROSS_REPO_READ_TOKEN: ${{ secrets.CROSS_REPO_READ_TOKEN }}
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
@@ -39,16 +45,9 @@ jobs:
           APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
         run: |
           set -euo pipefail
-          [[ "$SHARED_SOURCE_REVISION" =~ ^[a-f0-9]{40}$ ]] || { echo 'SHARED_JS_SOURCE_REVISION must be a full commit SHA.' >&2; exit 1; }
           for name in CROSS_REPO_READ_TOKEN APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_ID APPLE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_TEAM_ID; do
             test -n "${!name:-}" || { echo "$name is required in the tcc-production environment." >&2; exit 1; }
           done
-
-      - name: Checkout TCC
-        uses: actions/checkout@v4
-        with:
-          path: tachograph-card-client
-          persist-credentials: false
 
       - name: Require the committed identity to be the environment's
         env:
@@ -59,19 +58,65 @@ jobs:
           test "$committed" = "$APPLE_SIGNING_IDENTITY" \
             || { echo "tauri.conf.json signs as '$committed', the environment as '$APPLE_SIGNING_IDENTITY'." >&2; exit 1; }
 
-      - name: Checkout the pinned shared.js
+      - name: Verify checked-out TCC revision
+        env:
+          EXPECTED_TCC_SHA: ${{ github.sha }}
+        run: test "$(git -C tachograph-card-client rev-parse HEAD)" = "$EXPECTED_TCC_SHA"
+
+      - name: Choose shared.js source mode
+        id: source-mode
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
+            if [ "$GITHUB_BASE_REF" != main ]; then
+              echo "Signed pull-request builds must target main." >&2
+              exit 1
+            fi
+            mode=development
+          elif [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
+            if [ "$GITHUB_REF_TYPE" = tag ] || [ "$GITHUB_REF_NAME" = master ]; then
+              mode=release
+            elif [ "$GITHUB_REF_TYPE" = branch ]; then
+              mode=development
+            else
+              echo "Cannot choose a shared.js source for this ref." >&2
+              exit 1
+            fi
+          else
+            echo "Cannot choose a shared.js source for this event." >&2
+            exit 1
+          fi
+          echo "mode=$mode" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve shared.js source
+        id: shared
+        working-directory: tachograph-card-client
+        env:
+          CROSS_REPO_READ_TOKEN: ${{ secrets.CROSS_REPO_READ_TOKEN }}
+          SHARED_SOURCE_MODE: ${{ steps.source-mode.outputs.mode }}
+        run: node scripts/resolve-shared-js-source.mjs "$SHARED_SOURCE_MODE"
+
+      - name: Checkout exact shared.js source
         uses: actions/checkout@v4
         with:
           repository: transportklok/shared.js
-          ref: ${{ vars.SHARED_JS_SOURCE_REVISION }}
+          ref: ${{ steps.shared.outputs.shared_source_sha }}
           token: ${{ secrets.CROSS_REPO_READ_TOKEN }}
           path: shared.js
           persist-credentials: false
 
-      - name: Verify exact shared source revision
+      - name: Verify exact shared.js commit
         env:
-          SHARED_SOURCE_REVISION: ${{ vars.SHARED_JS_SOURCE_REVISION }}
-        run: test "$(git -C shared.js rev-parse HEAD)" = "$SHARED_SOURCE_REVISION"
+          EXPECTED_SHARED_SHA: ${{ steps.shared.outputs.shared_source_sha }}
+        run: test "$(git -C shared.js rev-parse HEAD)" = "$EXPECTED_SHARED_SHA"
+
+      - name: Keep shared.js source evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: shared-js-source
+          path: ${{ runner.temp }}/shared-js-source.json
+          if-no-files-found: error
+          retention-days: 90
 
       - name: Set up Node
         uses: actions/setup-node@v4
