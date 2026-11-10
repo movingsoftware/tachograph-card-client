@@ -63,6 +63,23 @@ function requireContext(environment) {
     return {tccSha, runId, runAttempt}
 }
 
+function remoteReadFailureClassification(error) {
+    const stderr = error && typeof error === 'object' && 'stderr' in error
+        ? String(error.stderr ?? '')
+        : ''
+    const status = stderr.match(/The requested URL returned error:\s*([1-5]\d{2})\b/i)?.[1]
+
+    if (status) {
+        return 'HTTP status ' + status
+    }
+
+    if (/\b(?:Could not resolve host|Failed to connect|Connection timed out|Connection refused|Connection reset|ECONNRESET|ENOTFOUND|ETIMEDOUT|EAI_AGAIN)\b/i.test(stderr)) {
+        return 'transport failure'
+    }
+
+    return 'remote failure with no HTTP status'
+}
+
 function remoteRefs(refs, token, environment) {
     const authorization = Buffer.from('x-access-token:' + token).toString('base64')
     const gitEnvironment = {
@@ -80,8 +97,9 @@ function remoteRefs(refs, token, environment) {
             maxBuffer: 1024 * 1024,
             stdio: ['ignore', 'pipe', 'pipe'],
         })
-    } catch {
-        fail('Could not read shared.js source metadata from its private repository.')
+    } catch (error) {
+        fail('Could not read shared.js source metadata from its private repository ('
+            + remoteReadFailureClassification(error) + ').')
     }
 }
 

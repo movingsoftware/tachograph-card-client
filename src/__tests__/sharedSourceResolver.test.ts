@@ -12,6 +12,7 @@ const TCC_SHA = 'a'.repeat(40)
 
 type ResolverOptions = {
     gitResponse?: string
+    gitStderr?: string
     gitExitCode?: string
     releaseDependencies?: string | null
     token?: string
@@ -38,7 +39,7 @@ beforeEach(() => {
         '#!/usr/bin/env node',
         "import {appendFileSync} from 'node:fs'",
         "appendFileSync(process.env.GIT_ARGUMENTS_FILE, JSON.stringify(process.argv.slice(2)))",
-        "if (process.env.GIT_EXIT_CODE !== '0') process.exit(Number(process.env.GIT_EXIT_CODE))",
+        "if (process.env.GIT_EXIT_CODE !== '0') { process.stderr.write(process.env.GIT_STDERR ?? ''); process.exit(Number(process.env.GIT_EXIT_CODE)) }",
         "process.stdout.write(process.env.GIT_RESPONSE ?? '')",
     ].join('\n')
     const fakeGitPath = join(binDirectory, 'git')
@@ -73,6 +74,7 @@ function resolveSource(mode: 'development' | 'release', options: ResolverOptions
             RUNNER_TEMP: runnerTemp,
             GIT_ARGUMENTS_FILE: gitArgumentsFile,
             GIT_RESPONSE: options.gitResponse ?? '',
+            GIT_STDERR: options.gitStderr ?? '',
             GIT_EXIT_CODE: options.gitExitCode ?? '0',
         },
     })
@@ -194,6 +196,43 @@ describe('resolve-shared-js-source.mjs', () => {
 
         expect(result.status).not.toBe(0)
         expect(result.stderr).toMatch(/Could not read shared\.js/)
+        expect(result.output).toBe('')
+    })
+
+    it.each(['401', '403'])('reports HTTP %s without exposing response details', (status) => {
+        const token = 'test-secret-that-must-not-be-printed'
+        const responseHeader = 'Authorization: Bearer ' + token
+        const responseBody = 'private response body that must not be printed'
+        const result = resolveSource('development', {
+            gitExitCode: '128',
+            gitStderr: 'fatal: unable to access shared.js: The requested URL returned error: ' + status
+                + '\n' + responseHeader + '\n' + responseBody,
+            token,
+        })
+
+        expect(result.status).not.toBe(0)
+        expect(result.stderr).toContain('HTTP status ' + status)
+        expect(result.stderr).not.toContain(responseHeader)
+        expect(result.stderr).not.toContain(responseBody)
+        expect(result.stderr).not.toContain(token)
+        expect(result.output).toBe('')
+    })
+
+    it('reports a transport failure without exposing remote diagnostics or credentials', () => {
+        const token = 'test-secret-that-must-not-be-printed'
+        const remoteDetail = 'Could not resolve host: private.internal'
+        const responseHeader = 'Authorization: Bearer ' + token
+        const result = resolveSource('development', {
+            gitExitCode: '128',
+            gitStderr: remoteDetail + '\n' + responseHeader,
+            token,
+        })
+
+        expect(result.status).not.toBe(0)
+        expect(result.stderr).toContain('transport failure')
+        expect(result.stderr).not.toContain(remoteDetail)
+        expect(result.stderr).not.toContain(responseHeader)
+        expect(result.stderr).not.toContain(token)
         expect(result.output).toBe('')
     })
 
