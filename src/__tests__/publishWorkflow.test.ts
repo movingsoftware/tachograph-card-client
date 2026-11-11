@@ -8,16 +8,18 @@ import {afterEach, beforeEach, describe, expect, it} from 'vitest'
 
 const ROOT = resolve(__dirname, '..', '..')
 
-type Step = {name?: string; run?: string; uses?: string; with?: Record<string, string>}
+type Step = {id?: string; name?: string; run?: string; uses?: string; if?: string; with?: Record<string, string>; env?: Record<string, string>}
 type Job = {if?: string; needs?: string | string[]; environment?: string; steps: Step[]; outputs?: Record<string, string>}
 type Workflow = {
+    env?: Record<string, string>
     on?: {
         push?: {tags?: string[]}
+        pull_request?: {branches?: string[]}
         workflow_dispatch?: {inputs?: Record<string, {options?: string[]; required?: boolean}>}
     }
     jobs: Record<string, Job>
 }
-type Context = {github: {event_name: string}; needs: {release: {outputs: {path: string}}}}
+type Context = {github: {event_name: string; same_repository: boolean}; needs: {release: {outputs: {path: string}}}}
 
 const workflow = load(readFileSync(join(ROOT, '.github/workflows/publish-application-bundles.yml'), 'utf8')) as Workflow
 
@@ -31,24 +33,29 @@ function script(job: string) {
     return requiredJob(job).steps.map((step) => step.run ?? '').join('\n')
 }
 
-// Evaluates the equality expressions used by this workflow without executing YAML as JavaScript.
+// Evaluates the equality expressions used by this workflow, joined by ||, without executing YAML as JavaScript.
 function condition(expression: string, context: Context) {
     if (expression === 'true') return true
-    const comparison = /^\$\{\{\s*(github\.event_name|needs\.release\.outputs\.path)\s*==\s*'([^']+)'\s*\}\}$/.exec(expression)
-    if (!comparison) throw new Error(`Unsupported workflow condition: ${expression}`)
-    const actual = comparison[1] === 'github.event_name'
-        ? context.github.event_name
-        : context.needs.release.outputs.path
-    return actual === comparison[2]
+    const body = /^\$\{\{\s*(.+?)\s*\}\}$/.exec(expression)
+    if (!body) throw new Error(`Unsupported workflow condition: ${expression}`)
+    return body[1].split(/\s*\|\|\s*/).some((clause) => {
+        if (clause === 'github.event.pull_request.head.repo.full_name == github.repository') return context.github.same_repository
+        const comparison = /^(github\.event_name|needs\.release\.outputs\.path)\s*==\s*'([^']+)'$/.exec(clause)
+        if (!comparison) throw new Error(`Unsupported workflow condition: ${expression}`)
+        const actual = comparison[1] === 'github.event_name'
+            ? context.github.event_name
+            : context.needs.release.outputs.path
+        return actual === comparison[2]
+    })
 }
 
 // The jobs that run for one event and one detector answer, skipping a job whose needs did not run.
-function jobsThatRun(event: string, path: string) {
+function jobsThatRun(event: string, path: string, sameRepository = true) {
     const ran: string[] = []
     for (const [name, job] of Object.entries(workflow.jobs)) {
         const needs = [job.needs ?? []].flat()
         if (needs.every((need) => ran.includes(need))
-            && condition(job.if ?? 'true', {github: {event_name: event}, needs: {release: {outputs: {path}}}})) {
+            && condition(job.if ?? 'true', {github: {event_name: event, same_repository: sameRepository}, needs: {release: {outputs: {path}}}})) {
             ran.push(name)
         }
     }
@@ -56,8 +63,11 @@ function jobsThatRun(event: string, path: string) {
 }
 
 describe('publish-application-bundles.yml path choice', () => {
-    it('runs on a stable version tag and on manual widen and rollback', () => {
+    it('runs on a stable version tag, on pull requests into main and the release lines, and on manual widen and rollback', () => {
         expect(workflow.on?.push?.tags).toEqual(['[0-9]+.[0-9]+.[0-9]+'])
+        expect(workflow.on?.pull_request?.branches).toEqual(['main', 'release/**'])
+        expect(workflow.on?.workflow_dispatch?.inputs?.environment?.options).toEqual(['tcc-staging', 'tcc-production'])
+        expect(workflow.on?.workflow_dispatch?.inputs?.environment?.required).toBe(true)
         expect(workflow.on?.workflow_dispatch?.inputs?.action?.options).toEqual(['widen', 'rollback'])
         expect(workflow.on?.workflow_dispatch?.inputs?.reason?.required).toBe(true)
     })
@@ -79,6 +89,37 @@ describe('publish-application-bundles.yml path choice', () => {
         expect(jobsThatRun('push', '')).toEqual(['release'])
     })
 
+    it('publishes a pull request to staging through the same jobs, and never a fork', () => {
+        expect(jobsThatRun('pull_request', 'web')).toEqual(['release', 'web'])
+        expect(jobsThatRun('pull_request', 'native')).toEqual(['release', 'native'])
+        expect(jobsThatRun('pull_request', 'web', false)).toEqual([])
+    })
+
+    it('sends a tag to production at 10% and a raised pull-request version to staging at 100%', () => {
+        const guard = requiredJob('release').steps.find((step) => step.id === 'guard')
+        expect(requiredJob('release').environment).toBe("${{ github.event_name == 'push' && 'tcc-production' || 'tcc-staging' }}")
+        expect(guard?.run).toContain('echo environment=tcc-production; echo rollout=10; echo mode=release; echo publish=true;')
+        expect(guard?.run).toContain('echo environment=tcc-staging; echo rollout=100;')
+        expect(guard?.run).toContain('[ "$GITHUB_BASE_REF" = main ] || mode=release')
+        expect(guard?.run).toContain('echo publish=false')
+        expect(guard?.run).toContain("staging only takes a raised version")
+        expect(guard?.env?.PREVIOUS_SHA).toBe("${{ github.event.action == 'synchronize' && github.event.before || github.event.pull_request.base.sha }}")
+        for (const id of ['shared', 'path']) {
+            expect(requiredJob('release').steps.find((step) => step.id === id)?.if).toBe("${{ steps.guard.outputs.publish == 'true' }}")
+        }
+    })
+
+    it('lets the native-change detector fail the run under set -e, on both environments', () => {
+        const path = requiredJob('release').steps.find((step) => step.id === 'path')
+        expect(path?.run).toMatch(/^set -euo pipefail\nresult="\$\(node scripts\/native-change\.mjs\)"/)
+    })
+
+    it('raises the native baseline only for a production release', () => {
+        const keep = requiredJob('native').steps.find((step) => step.name === 'Keep the raised baseline')
+        expect(keep?.if).toBe("${{ needs.release.outputs.environment == 'tcc-production' }}")
+        expect(script('native')).toContain('[ "$ENVIRONMENT" = tcc-production ] || exit 0')
+    })
+
     it('only acts on the channel in a manual run', () => {
         expect(jobsThatRun('workflow_dispatch', '')).toEqual(['channel'])
     })
@@ -88,7 +129,7 @@ describe('publish-application-bundles.yml web job', () => {
     const web = script('web')
 
     it('builds dist/spa, zips and minisigns it and writes the manifest with the native range', () => {
-        expect(requiredJob('web').environment).toBe('tcc-production')
+        expect(requiredJob('web').environment).toBe('${{ needs.release.outputs.environment }}')
         expect(web).toContain('npm run build:release -- --web-only')
         expect(web).toContain('zip -qrX')
         expect(web).toContain('npm run tauri -- signer sign')
@@ -99,7 +140,26 @@ describe('publish-application-bundles.yml web job', () => {
         expect(web.match(/--if-none-match '\*'/g)).toHaveLength(2)
         expect(web.indexOf('applications:bundles:import')).toBeLessThan(web.indexOf('applications:bundles:publish'))
         expect(web.indexOf('applications:bundles:publish')).toBeLessThan(web.indexOf('applications:bundles:channel'))
-        expect(web).toContain('--rollout=10')
+        expect(web).toContain('--rollout="$BUNDLE_ROLLOUT"')
+        expect(web).toContain('"BUNDLE_ROLLOUT=$ROLLOUT"')
+    })
+
+    it('points the bundle at its environment\'s Platform API, app and application', () => {
+        const build = requiredJob('web').steps.find((step) => step.name === 'Build dist/spa with the release\'s updater configuration')
+        expect(build?.env?.BUNDLE_UPDATER_APPLICATION_ID).toBe('${{ vars.TCC_APP_ID }}')
+        expect(build?.env?.VITE_TRANSPORTKLOK_API_DOMAIN).toBe('${{ vars.TRANSPORTKLOK_API_DOMAIN }}')
+        expect(build?.env?.VITE_TRANSPORTKLOK_APP_URL).toBe('${{ vars.TRANSPORTKLOK_APP_URL }}')
+        expect(build?.env?.VITE_APP_KEY).toBe('${{ secrets.TCC_APP_KEY }}')
+        const quasar = readFileSync(join(ROOT, 'quasar.config.ts'), 'utf8')
+        for (const name of ['VITE_TRANSPORTKLOK_API_DOMAIN', 'VITE_TRANSPORTKLOK_APP_URL', 'VITE_APP_KEY']) {
+            expect(quasar).toContain(`'${name}',`)
+        }
+    })
+
+    it('publishes to the channel the app asks for', () => {
+        const boot = readFileSync(join(ROOT, 'src/boot/bundle-updates.ts'), 'utf8')
+        expect(workflow.env?.CHANNEL).toBe('production')
+        expect(boot).toContain(`const WEB_BUNDLE_CHANNEL = '${workflow.env?.CHANNEL}'`)
     })
 })
 
@@ -107,7 +167,8 @@ describe('publish-application-bundles.yml channel job', () => {
     it('widens or rolls back through Platform with the reason passed as task environment', () => {
         const channel = script('channel')
 
-        expect(requiredJob('channel').environment).toBe('tcc-production')
+        expect(requiredJob('channel').environment).toBe('${{ inputs.environment }}')
+        expect(channel).toContain('TCC_APP_ID is required in the $ENVIRONMENT environment.')
         expect(channel).toContain('applications:bundles:widen "$BUNDLE_APP" "$BUNDLE_CHANNEL" "$BUNDLE_PERCENT"')
         expect(channel).toContain('applications:bundles:rollback "$BUNDLE_APP" "$BUNDLE_CHANNEL"')
         expect(channel).toContain('"BUNDLE_REASON=$REASON"')

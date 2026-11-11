@@ -16,7 +16,7 @@ import {
 } from '../services/deviceRuntime'
 
 /** Channel this installation follows unless Platform overrides it. */
-const WEB_BUNDLE_CHANNEL = 'stable'
+const WEB_BUNDLE_CHANNEL = 'production'
 
 export let bundleUpdatesCanStartRouteFlow = true
 let gate: BundleUpdateGate | undefined

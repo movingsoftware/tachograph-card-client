@@ -136,7 +136,7 @@ describe('bundle updater boot gate', () => {
         await bootModule.runBundleUpdateBoot()
 
         await expect(bootModule.checkBundleUpdates()).resolves.toBe('relaunching')
-        expect(state.client.checkForWebUpdate).toHaveBeenCalledWith({currentVersion: '0.7.0', installationId: 'installation-1', nativeVersion: '1.9.0', channel: 'stable'})
+        expect(state.client.checkForWebUpdate).toHaveBeenCalledWith({currentVersion: '0.7.0', installationId: 'installation-1', nativeVersion: '1.9.0', channel: 'production'})
         expect(state.invoke).toHaveBeenCalledWith('install_web_bundle', {url: 'https://api.transportklok.nl/web.zip', version: '0.8.0', sha256: 'a'.repeat(64), signature: 'sig'})
         expect(state.native.install).not.toHaveBeenCalled()
         expect(state.native.relaunch).toHaveBeenCalledOnce()

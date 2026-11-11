@@ -56,9 +56,31 @@ preparation commits the pin; it is not a manually maintained GitHub environment
 field. The run summary and source evidence artifact record the repository, ref,
 shared.js commit, TCC commit, workflow run, and attempt.
 
-The application-bundle workflow continues to require a TCC tag on main that
-matches `package.json`. Manual channel widen and rollback actions remain
+The application-bundle workflow publishes a TCC tag on main that matches
+`package.json` with release resolution. A pull request publishes with
+development resolution when it targets main, and with release resolution when it
+targets a release line. Manual channel widen and rollback actions remain
 independent of source resolution.
+
+## Staging and production
+
+`publish-application-bundles.yml` publishes to the Platform behind a GitHub
+environment, on that Platform's `production` channel:
+
+- A tag publishes to `tcc-production` (app.transportklok.nl) at 10% of installations.
+- A pull request into main or a release line, from this repository, whose push
+  raises `package.json`'s version publishes that version to `tcc-staging`
+  (app.stage.transportklok.nl) at 100%. A push that keeps the version publishes
+  nothing; a lower version fails. A native change hands over to Platform's
+  workflow with environment `staging` and leaves the native baseline alone.
+- A manual run widens or rolls back the channel of the environment it names.
+
+Each environment holds `TCC_APP_ID`, `TCC_BUNDLES_BUCKET`, `PLATFORM_ECS_CLUSTER`,
+`PLATFORM_ECS_SERVICE`, `BUNDLE_UPDATER_API_BASE_URL`, `BUNDLE_UPDATER_SIGNING_KEY_ID`,
+`TAURI_SIGNING_PUBLIC_KEY`, `TRANSPORTKLOK_API_DOMAIN` and `TRANSPORTKLOK_APP_URL` as
+variables, and `CROSS_REPO_READ_TOKEN`, `TAURI_SIGNING_PRIVATE_KEY`,
+`TAURI_SIGNING_PRIVATE_KEY_PASSWORD`, `TCC_BUNDLES_AWS_ROLE_ARN` and `TCC_APP_KEY` as
+secrets. The bundle points the app at that environment's API, app and application.
 
 ## Launch gate and web bundles
 
@@ -70,7 +92,7 @@ per app start; a launch flow that restarts later (offline, maintenance, logout)
 reuses the result.
 
 Web bundles come from `/bundles/web/latest`. The client sends the installation id,
-the native version and the channel (`stable` unless Platform overrides it for this
+the native version and the channel (`production` unless Platform overrides it for this
 installation). Any other version, older or newer, is available, because a channel
 can roll a web bundle back. The native side downloads the zip, verifies it and
 stages it (`install_web_bundle`). The relaunch then serves it.

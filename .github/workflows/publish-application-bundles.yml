@@ -4,10 +4,21 @@ on:
   push:
     tags:
       - '[0-9]+.[0-9]+.[0-9]+'
+  pull_request:
+    branches:
+      - main
+      - 'release/**'
   workflow_dispatch:
     inputs:
+      environment:
+        description: TCC environment whose Platform channel to act on
+        required: true
+        type: choice
+        options:
+          - tcc-staging
+          - tcc-production
       action:
-        description: Act on the production channel's live web bundle
+        description: Act on the channel's live web bundle
         required: true
         type: choice
         options:
@@ -24,7 +35,7 @@ on:
         type: string
 
 concurrency:
-  group: tcc-application-bundles
+  group: tcc-application-bundles-${{ github.event_name == 'pull_request' && 'tcc-staging' || inputs.environment || 'tcc-production' }}
   cancel-in-progress: false
 
 permissions:
@@ -36,13 +47,16 @@ env:
 
 jobs:
   release:
-    name: Guard the tag and choose web or native
-    if: ${{ github.event_name == 'push' }}
+    name: Guard the release and choose web or native
+    # A fork's pull request gets no environment secrets, so it publishes nothing.
+    if: ${{ github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository }}
     runs-on: blacksmith-2vcpu-ubuntu-2204
     timeout-minutes: 10
-    environment: tcc-production
+    environment: ${{ github.event_name == 'push' && 'tcc-production' || 'tcc-staging' }}
     outputs:
       version: ${{ steps.guard.outputs.version }}
+      environment: ${{ steps.guard.outputs.environment }}
+      rollout: ${{ steps.guard.outputs.rollout }}
       path: ${{ steps.path.outputs.path }}
       shared_source_repository: ${{ steps.shared.outputs.shared_source_repository }}
       shared_source_ref: ${{ steps.shared.outputs.shared_source_ref }}
@@ -56,24 +70,47 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Check the tag is on main and equals package.json
+      # A tag publishes to production at 10%; a pull request whose push raises package.json's version publishes to staging at 100%.
+      - name: Check the tag, or the pull request's version raise
         id: guard
+        env:
+          PREVIOUS_SHA: ${{ github.event.action == 'synchronize' && github.event.before || github.event.pull_request.base.sha }}
         run: |
           set -euo pipefail
-          tag="$GITHUB_REF_NAME"
           version="$(node -p 'require("./package.json").version')"
-          test "$GITHUB_REF_TYPE" = tag
-          git merge-base --is-ancestor "$GITHUB_SHA" origin/main || { echo "Tag $tag is not on main." >&2; exit 1; }
-          test "$version" = "$tag" || { echo "Tag $tag does not equal package.json's version $version." >&2; exit 1; }
+          if [ "$GITHUB_EVENT_NAME" = push ]; then
+            tag="$GITHUB_REF_NAME"
+            test "$GITHUB_REF_TYPE" = tag
+            git merge-base --is-ancestor "$GITHUB_SHA" origin/main || { echo "Tag $tag is not on main." >&2; exit 1; }
+            test "$version" = "$tag" || { echo "Tag $tag does not equal package.json's version $version." >&2; exit 1; }
+            { echo environment=tcc-production; echo rollout=10; echo mode=release; echo publish=true; } >> "$GITHUB_OUTPUT"
+          else
+            git fetch --no-tags --depth=1 origin "$PREVIOUS_SHA"
+            previous="$(git show "$PREVIOUS_SHA:package.json" | node -e 'process.stdout.write(JSON.parse(require("fs").readFileSync(0, "utf8")).version)')"
+            mode=development
+            [ "$GITHUB_BASE_REF" = main ] || mode=release
+            { echo environment=tcc-staging; echo rollout=100; echo "mode=$mode"; } >> "$GITHUB_OUTPUT"
+            if [ "$version" = "$previous" ]; then
+              echo "This push keeps version $version, so nothing is published to staging." >> "$GITHUB_STEP_SUMMARY"
+              echo publish=false >> "$GITHUB_OUTPUT"
+            else
+              node -e 'const [a, b] = process.argv.slice(1).map((v) => v.split(".").map(Number)); process.exit((a[0] - b[0] || a[1] - b[1] || a[2] - b[2]) > 0 ? 0 : 1)' "$version" "$previous" \
+                || { echo "Version $version is lower than $previous; staging only takes a raised version." >&2; exit 1; }
+              echo publish=true >> "$GITHUB_OUTPUT"
+            fi
+          fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Resolve shared.js source
         id: shared
+        if: ${{ steps.guard.outputs.publish == 'true' }}
         env:
           CROSS_REPO_READ_TOKEN: ${{ secrets.CROSS_REPO_READ_TOKEN }}
-        run: node scripts/resolve-shared-js-source.mjs release
+          SHARED_SOURCE_MODE: ${{ steps.guard.outputs.mode }}
+        run: node scripts/resolve-shared-js-source.mjs "$SHARED_SOURCE_MODE"
 
       - name: Keep shared.js source evidence
+        if: ${{ steps.guard.outputs.publish == 'true' }}
         uses: actions/upload-artifact@v4
         with:
           name: shared-js-source
@@ -83,6 +120,7 @@ jobs:
 
       - name: Decide web bundle or native release
         id: path
+        if: ${{ steps.guard.outputs.publish == 'true' }}
         run: |
           set -euo pipefail
           result="$(node scripts/native-change.mjs)"
@@ -99,18 +137,20 @@ jobs:
           echo "path=$path" >> "$GITHUB_OUTPUT"
 
   web:
-    name: Publish the web bundle at 10%
+    name: Publish the web bundle to ${{ needs.release.outputs.environment }} at ${{ needs.release.outputs.rollout }}%
     needs: release
     if: ${{ needs.release.outputs.path == 'web' }}
     runs-on: blacksmith-2vcpu-ubuntu-2204
     timeout-minutes: 30
-    environment: tcc-production
+    environment: ${{ needs.release.outputs.environment }}
     permissions:
       contents: read
       id-token: write
     env:
       VERSION: ${{ needs.release.outputs.version }}
-      APPLICATION_ID: ${{ vars.TCC_PRODUCTION_APP_ID }}
+      ENVIRONMENT: ${{ needs.release.outputs.environment }}
+      ROLLOUT: ${{ needs.release.outputs.rollout }}
+      APPLICATION_ID: ${{ vars.TCC_APP_ID }}
       BUCKET: ${{ vars.TCC_BUNDLES_BUCKET }}
       PLATFORM_ECS_CLUSTER: ${{ vars.PLATFORM_ECS_CLUSTER }}
       PLATFORM_ECS_SERVICE: ${{ vars.PLATFORM_ECS_SERVICE }}
@@ -126,7 +166,7 @@ jobs:
           set -euo pipefail
           for name in CROSS_REPO_READ_TOKEN TAURI_SIGNING_PRIVATE_KEY BUNDLE_UPDATER_API_BASE_URL BUNDLE_UPDATER_SIGNING_KEY_ID \
             BUNDLE_UPDATER_PUBLIC_KEY APPLICATION_ID BUCKET PLATFORM_ECS_CLUSTER PLATFORM_ECS_SERVICE; do
-            test -n "${!name:-}" || { echo "$name is required in the tcc-production environment." >&2; exit 1; }
+            test -n "${!name:-}" || { echo "$name is required in the $ENVIRONMENT environment." >&2; exit 1; }
           done
 
       - name: Checkout TCC
@@ -180,9 +220,12 @@ jobs:
         env:
           BUNDLE_APP_VERSION: ${{ needs.release.outputs.version }}
           BUNDLE_UPDATER_API_BASE_URL: ${{ vars.BUNDLE_UPDATER_API_BASE_URL }}
-          BUNDLE_UPDATER_APPLICATION_ID: ${{ vars.TCC_PRODUCTION_APP_ID }}
+          BUNDLE_UPDATER_APPLICATION_ID: ${{ vars.TCC_APP_ID }}
           BUNDLE_UPDATER_SIGNING_KEY_ID: ${{ vars.BUNDLE_UPDATER_SIGNING_KEY_ID }}
           BUNDLE_UPDATER_PUBLIC_KEY: ${{ vars.TAURI_SIGNING_PUBLIC_KEY }}
+          VITE_TRANSPORTKLOK_API_DOMAIN: ${{ vars.TRANSPORTKLOK_API_DOMAIN }}
+          VITE_TRANSPORTKLOK_APP_URL: ${{ vars.TRANSPORTKLOK_APP_URL }}
+          VITE_APP_KEY: ${{ secrets.TCC_APP_KEY }}
         run: |
           set -euo pipefail
           npm ci
@@ -247,7 +290,7 @@ jobs:
           aws s3api put-object --bucket "$BUCKET" --key "$manifest_key" --body "$RUNNER_TEMP/manifest.json" \
             --content-type application/json --if-none-match '*' > /dev/null
 
-      - name: Import, publish and make it live on the channel at 10%
+      - name: Import, publish and make it live on the channel
         working-directory: tachograph-card-client
         run: |
           set -euo pipefail
@@ -256,12 +299,12 @@ jobs:
               --manifest-content-sha256="$BUNDLE_RAW_SHA256" --json --no-interaction > /tmp/bundle-import.json &&
             MANIFEST_SHA256="$(php -r '"'"'echo json_decode(file_get_contents("/tmp/bundle-import.json"), true, 512, JSON_THROW_ON_ERROR)["manifest_sha256"];'"'"')" &&
             php artisan applications:bundles:publish "$BUNDLE_APP" "$BUNDLE_VERSION" --manifest-sha256="$MANIFEST_SHA256" --json --no-interaction &&
-            php artisan applications:bundles:channel "$BUNDLE_APP" "$BUNDLE_CHANNEL" "$BUNDLE_VERSION" --rollout=10 --reason="$BUNDLE_REASON" --json --no-interaction' \
-            "BUNDLE_APP=$APPLICATION_ID" "BUNDLE_VERSION=$VERSION" "BUNDLE_CHANNEL=$CHANNEL" "BUNDLE_BUCKET=$BUCKET" \
+            php artisan applications:bundles:channel "$BUNDLE_APP" "$BUNDLE_CHANNEL" "$BUNDLE_VERSION" --rollout="$BUNDLE_ROLLOUT" --reason="$BUNDLE_REASON" --json --no-interaction' \
+            "BUNDLE_APP=$APPLICATION_ID" "BUNDLE_VERSION=$VERSION" "BUNDLE_CHANNEL=$CHANNEL" "BUNDLE_BUCKET=$BUCKET" "BUNDLE_ROLLOUT=$ROLLOUT" \
             "BUNDLE_MANIFEST_KEY=$(jq -r .manifest_key "$RUNNER_TEMP/keys.json")" \
             "BUNDLE_RAW_SHA256=$(jq -r .raw_manifest_sha256 "$RUNNER_TEMP/keys.json")" \
-            "BUNDLE_REASON=Tag $GITHUB_REF_NAME, run $GITHUB_RUN_ID"
-          echo "$VERSION is live on $CHANNEL for 10%. Widen or roll back with a manual run of this workflow." >> "$GITHUB_STEP_SUMMARY"
+            "BUNDLE_REASON=$GITHUB_EVENT_NAME $GITHUB_REF_NAME, run $GITHUB_RUN_ID"
+          echo "$VERSION is live on $ENVIRONMENT's $CHANNEL channel for $ROLLOUT%. Widen or roll back with a manual run of this workflow." >> "$GITHUB_STEP_SUMMARY"
 
   # The native shell's signed installer and updater matrix is Platform's publish-application-bundles.yml; a workflow may not push, so the raised baseline leaves as an artifact.
   native:
@@ -272,6 +315,7 @@ jobs:
     timeout-minutes: 5
     env:
       VERSION: ${{ needs.release.outputs.version }}
+      ENVIRONMENT: ${{ needs.release.outputs.environment }}
       EXPECTED_TCC_SHA: ${{ needs.release.outputs.tcc_source_sha }}
       EXPECTED_SHARED_SHA: ${{ needs.release.outputs.shared_source_sha }}
     steps:
@@ -291,7 +335,7 @@ jobs:
           name: shared-js-source
           path: shared-js-source
 
-      - name: Raise the native baseline to this release
+      - name: Hand over the native build and raise the baseline for production
         run: |
           set -euo pipefail
           jq --arg tag "$VERSION" '.baseline_tag = $tag' native-baseline.json > native-baseline.next.json
@@ -299,11 +343,16 @@ jobs:
           {
             echo "### $VERSION is a native release"
             echo "No web bundle was published. Build and publish the native shell with Platform's \`publish-application-bundles.yml\`:"
+            echo "- environment: \`${ENVIRONMENT#tcc-}\`"
             echo "- version: \`$VERSION\`"
             echo "- tcc_source_revision: $EXPECTED_TCC_SHA"
             echo "- shared_source_revision: $EXPECTED_SHARED_SHA"
             echo '- shared source resolution:'
             cat shared-js-source/shared-js-source.json
+          } >> "$GITHUB_STEP_SUMMARY"
+          # Only a production release moves the baseline; a staging native build leaves it where it is.
+          [ "$ENVIRONMENT" = tcc-production ] || exit 0
+          {
             echo "Once it is published, open a PR into main with this native-baseline.json (the \`native-baseline\` artifact):"
             echo '```json'
             cat native-baseline.json
@@ -311,6 +360,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Keep the raised baseline
+        if: ${{ needs.release.outputs.environment == 'tcc-production' }}
         uses: actions/upload-artifact@v4
         with:
           name: native-baseline
@@ -321,11 +371,11 @@ jobs:
           retention-days: 90
 
   channel:
-    name: ${{ inputs.action }} the production channel
+    name: ${{ inputs.action }} the ${{ inputs.environment }} channel
     if: ${{ github.event_name == 'workflow_dispatch' }}
     runs-on: blacksmith-2vcpu-ubuntu-2204
     timeout-minutes: 15
-    environment: tcc-production
+    environment: ${{ inputs.environment }}
     permissions:
       contents: read
       id-token: write
@@ -333,14 +383,15 @@ jobs:
       ACTION: ${{ inputs.action }}
       PERCENT: ${{ inputs.percent }}
       REASON: ${{ inputs.reason }}
-      APPLICATION_ID: ${{ vars.TCC_PRODUCTION_APP_ID }}
+      ENVIRONMENT: ${{ inputs.environment }}
+      APPLICATION_ID: ${{ vars.TCC_APP_ID }}
       PLATFORM_ECS_CLUSTER: ${{ vars.PLATFORM_ECS_CLUSTER }}
       PLATFORM_ECS_SERVICE: ${{ vars.PLATFORM_ECS_SERVICE }}
     steps:
       - name: Check the inputs
         run: |
           set -euo pipefail
-          test -n "$APPLICATION_ID" || { echo 'TCC_PRODUCTION_APP_ID is required in the tcc-production environment.' >&2; exit 1; }
+          test -n "$APPLICATION_ID" || { echo "TCC_APP_ID is required in the $ENVIRONMENT environment." >&2; exit 1; }
           test -n "${REASON// /}" || { echo 'Give a reason.' >&2; exit 1; }
           if [ "$ACTION" = widen ]; then
             [[ "$PERCENT" =~ ^[0-9]+$ ]] && [ "$PERCENT" -ge 1 ] && [ "$PERCENT" -le 100 ] \
@@ -358,7 +409,7 @@ jobs:
           role-to-assume: ${{ secrets.TCC_BUNDLES_AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Act on the production channel
+      - name: Act on the environment's channel
         run: |
           set -euo pipefail
           case "$ACTION" in
@@ -367,4 +418,4 @@ jobs:
             *) echo "Unknown action '$ACTION'." >&2; exit 1 ;;
           esac
           bash scripts/platform-artisan.sh "$command" "BUNDLE_APP=$APPLICATION_ID" "BUNDLE_CHANNEL=$CHANNEL" "BUNDLE_PERCENT=$PERCENT" "BUNDLE_REASON=$REASON"
-          echo "$ACTION on $CHANNEL done; the receipt is in the Platform task's log." >> "$GITHUB_STEP_SUMMARY"
+          echo "$ACTION on $ENVIRONMENT's $CHANNEL channel done; the receipt is in the Platform task's log." >> "$GITHUB_STEP_SUMMARY"
