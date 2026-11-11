@@ -16,7 +16,8 @@ function validateUpdaterPublicKey(value) {
         const decodedBytes = decodeCanonicalBase64(value)
         const decodedText = decodedBytes.toString('utf8')
         if (!Buffer.from(decodedText, 'utf8').equals(decodedBytes)) throw new Error('invalid UTF-8 minisign key')
-        const lines = decodedText.split(/\r?\n/)
+        // `tauri signer generate` ends the key file with a newline.
+        const lines = decodedText.replace(/\r?\n$/, '').split(/\r?\n/)
         if (lines.length !== 2 || !lines[0].startsWith('untrusted comment: ')) throw new Error('invalid minisign key')
         const key = decodeCanonicalBase64(lines[1])
         if (key.length !== 42 || key[0] !== 0x45 || key[1] !== 0x64) {
@@ -27,7 +28,7 @@ function validateUpdaterPublicKey(value) {
     }
 }
 
-export function prepareBundleUpdaterConfig(environment, sourceVersions) {
+export function prepareBundleUpdaterConfig(environment, sourceVersions, committedPublicKey) {
     const required = [
         'BUNDLE_UPDATER_API_BASE_URL',
         'BUNDLE_UPDATER_APPLICATION_ID',
@@ -52,6 +53,9 @@ export function prepareBundleUpdaterConfig(environment, sourceVersions) {
     if (!uuid.test(values.BUNDLE_UPDATER_APPLICATION_ID)) throw new Error('Bundle updater application ID must be a UUID.')
     if (!/^[A-Za-z0-9_-]{1,64}$/.test(values.BUNDLE_UPDATER_SIGNING_KEY_ID)) throw new Error('Bundle updater signing key ID is invalid.')
     validateUpdaterPublicKey(values.BUNDLE_UPDATER_PUBLIC_KEY)
+    if (values.BUNDLE_UPDATER_PUBLIC_KEY !== committedPublicKey) {
+        throw new Error('Bundle updater public key must equal the key committed in tauri.conf.json.')
+    }
     const versionParts = stableVersion.exec(values.BUNDLE_APP_VERSION)
     if (!versionParts || versionParts.slice(1).some((part) => Number(part) > maximumVersionPart)) {
         throw new Error('Bundle application version must use stable x.y.z semantic versioning with bounded components.')

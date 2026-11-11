@@ -4,9 +4,9 @@ import {describe, expect, it, vi} from 'vitest'
 const listeners = vi.hoisted(() => ({} as Record<string, (event: {payload: unknown}) => void>))
 
 vi.mock('@tauri-apps/api/event', () => ({
-    listen: vi.fn(async (event: string, callback: (event: {payload: unknown}) => void) => {
+    listen: vi.fn((event: string, callback: (event: {payload: unknown}) => void) => {
         listeners[event] = callback
-        return () => undefined
+        return Promise.resolve(() => undefined)
     }),
 }))
 
@@ -15,6 +15,7 @@ describe('card activity', () => {
         const {isCardActivityBusy, watchCardActivity} = await import('../cardActivity')
         await watchCardActivity()
         const sync = listeners['global-cards-sync']
+        if (!sync) throw new Error('Card sync listener was not registered.')
 
         expect(isCardActivityBusy()).toBe(false)
         sync({payload: {reader_name: 'Reader A', authentication: true}})

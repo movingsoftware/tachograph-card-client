@@ -1,7 +1,9 @@
 // @vitest-environment node
 import {afterEach, beforeAll, beforeEach, describe, expect, it, vi} from 'vitest'
+import type * as SharedJs from 'shared.js'
+import type * as NativeBundleDownloader from '../../services/nativeBundleDownloader'
 
-let sharedExports!: typeof import('shared.js')
+let sharedExports!: typeof SharedJs
 
 const state = vi.hoisted(() => ({
     enabled: false,
@@ -16,7 +18,7 @@ const state = vi.hoisted(() => ({
 
 vi.mock('#q-app/wrappers', () => ({defineBoot: (callback: (context?: unknown) => unknown) => callback}))
 vi.mock('@tauri-apps/api/core', () => ({isTauri: () => true, invoke: (...args: unknown[]) => state.invoke(...args)}))
-vi.mock('../../services/cardActivity', () => ({isCardActivityBusy: () => false, watchCardActivity: async () => () => undefined}))
+vi.mock('../../services/cardActivity', () => ({isCardActivityBusy: () => false, watchCardActivity: () => Promise.resolve(() => undefined)}))
 vi.mock('@tauri-apps/plugin-updater', () => ({check: vi.fn()}))
 vi.mock('quasar', () => ({
     Loading: {show: (...args: unknown[]) => state.loadingShow(...args), hide: vi.fn()},
@@ -32,20 +34,20 @@ vi.mock('../../services/bundleUpdaterConfig', () => ({
     },
 }))
 vi.mock('../../services/deviceRuntime', () => ({
-    initializeDeviceRuntime: async () => { state.order.push('runtime') },
+    initializeDeviceRuntime: () => { state.order.push('runtime'); return Promise.resolve() },
     getDeviceRuntimeInfo: () => ({version: '1.9.0', target: 'darwin-aarch64'}),
     getCurrentNativeApplicationVersion: () => '1.9.0',
     getCurrentWebBundleVersion: () => '0.7.0',
     getInstallationId: () => 'installation-1',
 }))
 vi.mock('../../services/nativeBundleDownloader', async (importOriginal) => ({
-    ...await importOriginal<typeof import('../../services/nativeBundleDownloader')>(),
+    ...await importOriginal<typeof NativeBundleDownloader>(),
     createNativeBundleDownloader: () => state.native,
 }))
 
 describe('bundle updater boot gate', () => {
     beforeAll(async () => {
-        sharedExports = await vi.importActual<typeof import('shared.js')>('shared.js')
+        sharedExports = await vi.importActual<typeof SharedJs>('shared.js')
     }, 20000)
 
     beforeEach(() => {
@@ -66,9 +68,9 @@ describe('bundle updater boot gate', () => {
             visibilityState: 'visible',
             addEventListener: (event: string, listener: () => void) => { if (event === 'visibilitychange') state.visibility.push(listener) },
         })
-        state.client.downloadBundle.mockReset().mockImplementation(async (_candidate: unknown, options?: {onProgress?: (received: number, total: number) => void}) => {
+        state.client.downloadBundle.mockReset().mockImplementation((_candidate: unknown, options?: {onProgress?: (received: number, total: number) => void}) => {
                 options?.onProgress?.(50, 100)
-                return {result: {held: true}}
+                return Promise.resolve({result: {held: true}})
             })
     })
 
@@ -81,6 +83,19 @@ describe('bundle updater boot gate', () => {
         await expect(bootModule.runBundleUpdateBoot()).resolves.toBeUndefined()
         expect(state.order).toEqual(['runtime', 'configuration'])
         expect(bootModule.bundleUpdatesCanStartRouteFlow).toBe(true)
+    })
+
+    it('checks the updater again when the server requires an update', async () => {
+        state.enabled = true
+        state.client.checkForUpdate.mockResolvedValue({status: 'up-to-date', release: {version: '1.9.0'}})
+
+        const bootModule = await import('../bundle-updates')
+        await bootModule.runBundleUpdateBoot()
+        await expect(bootModule.checkBundleUpdates()).resolves.toBe('continue')
+
+        await expect(bootModule.checkBundleUpdateManually()).resolves.toBe(false)
+        expect(state.client.checkForUpdate).toHaveBeenCalledTimes(2)
+        expect(state.client.checkForWebUpdate).toHaveBeenCalledTimes(2)
     })
 
     it.each(['relaunching', 'install-failure'] as const)('keeps the launch screen after a native update that is %s', async (scenario) => {
@@ -121,7 +136,7 @@ describe('bundle updater boot gate', () => {
         await bootModule.runBundleUpdateBoot()
 
         await expect(bootModule.checkBundleUpdates()).resolves.toBe('relaunching')
-        expect(state.client.checkForWebUpdate).toHaveBeenCalledWith({currentVersion: '0.7.0', installationId: 'installation-1', nativeVersion: '1.9.0', channel: 'stable'})
+        expect(state.client.checkForWebUpdate).toHaveBeenCalledWith({currentVersion: '0.7.0', installationId: 'installation-1', nativeVersion: '1.9.0', channel: 'production'})
         expect(state.invoke).toHaveBeenCalledWith('install_web_bundle', {url: 'https://api.transportklok.nl/web.zip', version: '0.8.0', sha256: 'a'.repeat(64), signature: 'sig'})
         expect(state.native.install).not.toHaveBeenCalled()
         expect(state.native.relaunch).toHaveBeenCalledOnce()

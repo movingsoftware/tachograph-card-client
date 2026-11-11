@@ -8,10 +8,54 @@ on:
       - master
 
 # This is the example from the readme.
-# On each push to the `release` branch it will create or update a GitHub release, build your app, and upload the artifacts to the release.
+# On each push to master it creates a draft installer release and uploads the matrix builds.
 
 jobs:
+  resolve_shared_source:
+    name: Resolve the committed shared.js release pin
+    runs-on: blacksmith-2vcpu-ubuntu-2204
+    timeout-minutes: 10
+    environment: tcc-production
+    permissions:
+      contents: read
+    outputs:
+      shared_source_repository: ${{ steps.shared.outputs.shared_source_repository }}
+      shared_source_ref: ${{ steps.shared.outputs.shared_source_ref }}
+      shared_source_sha: ${{ steps.shared.outputs.shared_source_sha }}
+      tcc_source_sha: ${{ steps.shared.outputs.tcc_source_sha }}
+    steps:
+      - name: Checkout TCC
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          path: tachograph-card-client
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify checked-out TCC revision
+        working-directory: tachograph-card-client
+        env:
+          EXPECTED_TCC_SHA: ${{ github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_TCC_SHA"
+
+      - name: Resolve shared.js source
+        id: shared
+        working-directory: tachograph-card-client
+        env:
+          CROSS_REPO_READ_TOKEN: ${{ secrets.CROSS_REPO_READ_TOKEN }}
+        run: node scripts/resolve-shared-js-source.mjs release
+
+      - name: Keep shared.js source evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: shared-js-source
+          path: ${{ runner.temp }}/shared-js-source.json
+          if-no-files-found: error
+          retention-days: 90
+
   publish-tauri:
+    needs: resolve_shared_source
+    environment: tcc-production
     permissions:
       contents: write
     strategy:
@@ -29,33 +73,32 @@ jobs:
 
     runs-on: ${{ matrix.platform }}
     steps:
-      - name: Require pinned shared source and private repository token
-        env:
-          SHARED_SOURCE_REVISION: ${{ vars.SHARED_JS_SOURCE_REVISION }}
-          CROSS_REPO_READ_TOKEN: ${{ secrets.CROSS_REPO_READ_TOKEN }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          [[ "$SHARED_SOURCE_REVISION" =~ ^[a-f0-9]{40}$ ]]
-          test -n "${CROSS_REPO_READ_TOKEN:-}" || { echo 'CROSS_REPO_READ_TOKEN is required.' >&2; exit 1; }
-
-      - uses: actions/checkout@v4
+      - name: Checkout TCC
+        uses: actions/checkout@v4
         with:
+          ref: ${{ needs.resolve_shared_source.outputs.tcc_source_sha }}
           path: tachograph-card-client
+          fetch-depth: 0
+          persist-credentials: false
 
-      - uses: actions/checkout@v4
+      - name: Checkout exact shared.js source
+        uses: actions/checkout@v4
         with:
           repository: transportklok/shared.js
-          ref: ${{ vars.SHARED_JS_SOURCE_REVISION }}
+          ref: ${{ needs.resolve_shared_source.outputs.shared_source_sha }}
           token: ${{ secrets.CROSS_REPO_READ_TOKEN }}
           path: shared.js
           persist-credentials: false
 
-      - name: Verify exact shared source revision
+      - name: Verify exact TCC revision
         env:
-          SHARED_SOURCE_REVISION: ${{ vars.SHARED_JS_SOURCE_REVISION }}
-        shell: bash
-        run: test "$(git -C shared.js rev-parse HEAD)" = "$SHARED_SOURCE_REVISION"
+          EXPECTED_TCC_SHA: ${{ needs.resolve_shared_source.outputs.tcc_source_sha }}
+        run: test "$(git -C tachograph-card-client rev-parse HEAD)" = "$EXPECTED_TCC_SHA"
+
+      - name: Verify exact shared.js commit
+        env:
+          EXPECTED_SHARED_SHA: ${{ needs.resolve_shared_source.outputs.shared_source_sha }}
+        run: test "$(git -C shared.js rev-parse HEAD)" = "$EXPECTED_SHARED_SHA"
 
       - name: setup node
         uses: actions/setup-node@v4

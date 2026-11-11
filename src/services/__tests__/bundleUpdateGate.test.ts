@@ -5,10 +5,10 @@ import {createBundleUpdateGate} from '../bundleUpdateGate'
 type Updater = Parameters<typeof createBundleUpdateGate>[0]['updaters'][number]
 
 const updater = (order: string[], name: string, overrides: Partial<Record<keyof Updater, unknown>> = {}): Updater => ({
-    start: vi.fn(async () => { order.push(`${name}:start`); return 'continue' as const }),
-    check: vi.fn(async () => { order.push(`${name}:check`); return {status: 'no-release' as const} }),
-    download: vi.fn(async () => { order.push(`${name}:download`); return {version: '2.0.0'} }),
-    apply: vi.fn(async () => { order.push(`${name}:apply`); return 'relaunching' as const }),
+    start: vi.fn(() => { order.push(`${name}:start`); return Promise.resolve('continue' as const) }),
+    check: vi.fn(() => { order.push(`${name}:check`); return Promise.resolve({status: 'no-release' as const}) }),
+    download: vi.fn(() => { order.push(`${name}:download`); return Promise.resolve({version: '2.0.0'}) }),
+    apply: vi.fn(() => { order.push(`${name}:apply`); return Promise.resolve('relaunching' as const) }),
     ...overrides,
 }) as Updater
 
@@ -25,7 +25,7 @@ describe('bundle update gate at launch', () => {
 
     it('stops before the web bundle when the native update relaunches', async () => {
         const order: string[] = []
-        const native = updater(order, 'native', {start: vi.fn(async () => { order.push('native:start'); return 'relaunching' })})
+        const native = updater(order, 'native', {start: vi.fn(() => { order.push('native:start'); return Promise.resolve('relaunching' as const) })})
         const gate = createBundleUpdateGate({updaters: [native, updater(order, 'web')], isBusy: () => false})
 
         await expect(gate.atLaunch()).resolves.toBe('relaunching')
@@ -34,7 +34,7 @@ describe('bundle update gate at launch', () => {
 
     it('keeps the launch screen when the web update relaunches', async () => {
         const order: string[] = []
-        const web = updater(order, 'web', {start: vi.fn(async () => 'relaunching')})
+        const web = updater(order, 'web', {start: vi.fn(() => Promise.resolve('relaunching' as const))})
 
         await expect(createBundleUpdateGate({updaters: [updater(order, 'native'), web], isBusy: () => false}).atLaunch()).resolves.toBe('relaunching')
     })
@@ -60,7 +60,7 @@ describe('bundle update gate at launch', () => {
 describe('bundle update gate on resume', () => {
     it('checks native then web and applies the first available update while no card is busy', async () => {
         const order: string[] = []
-        const web = updater(order, 'web', {check: vi.fn(async () => { order.push('web:check'); return available })})
+        const web = updater(order, 'web', {check: vi.fn(() => { order.push('web:check'); return Promise.resolve(available) })})
         const gate = createBundleUpdateGate({updaters: [updater(order, 'native'), web], isBusy: () => false})
 
         await expect(gate.onResume()).resolves.toBe(true)
@@ -78,7 +78,7 @@ describe('bundle update gate on resume', () => {
     it('does not download when a card became busy during the check', async () => {
         const order: string[] = []
         let busy = false
-        const native = updater(order, 'native', {check: vi.fn(async () => { busy = true; return available })})
+        const native = updater(order, 'native', {check: vi.fn(() => { busy = true; return Promise.resolve(available) })})
         const gate = createBundleUpdateGate({updaters: [native], isBusy: () => busy})
 
         await expect(gate.onResume()).resolves.toBe(false)
@@ -89,8 +89,8 @@ describe('bundle update gate on resume', () => {
         let busy = false
         const order: string[] = []
         const native = updater(order, 'native', {
-            check: vi.fn(async () => available),
-            download: vi.fn(async () => { busy = true; return {version: '2.0.0'} }),
+            check: vi.fn(() => Promise.resolve(available)),
+            download: vi.fn(() => { busy = true; return Promise.resolve({version: '2.0.0'}) }),
         })
         const gate = createBundleUpdateGate({updaters: [native], isBusy: () => busy})
 
@@ -114,14 +114,14 @@ describe('bundle update gate on resume', () => {
 
     it('keeps running when applying fails', async () => {
         const order: string[] = []
-        const native = updater(order, 'native', {check: vi.fn(async () => available), apply: vi.fn().mockRejectedValue(new Error('relaunch failed'))})
+        const native = updater(order, 'native', {check: vi.fn(() => Promise.resolve(available)), apply: vi.fn().mockRejectedValue(new Error('relaunch failed'))})
 
         await expect(createBundleUpdateGate({updaters: [native], isBusy: () => false}).onResume()).resolves.toBe(false)
     })
 
     it('keeps running when installing the update fails', async () => {
         const order: string[] = []
-        const native = updater(order, 'native', {check: vi.fn(async () => available), download: vi.fn().mockRejectedValue(new Error('install failed'))})
+        const native = updater(order, 'native', {check: vi.fn(() => Promise.resolve(available)), download: vi.fn().mockRejectedValue(new Error('install failed'))})
 
         await expect(createBundleUpdateGate({updaters: [native], isBusy: () => false}).onResume()).resolves.toBe(false)
         expect(native.apply).not.toHaveBeenCalled()
@@ -129,7 +129,7 @@ describe('bundle update gate on resume', () => {
 
     it('reports no update when there was nothing staged to apply', async () => {
         const order: string[] = []
-        const native = updater(order, 'native', {check: vi.fn(async () => available), apply: vi.fn(async () => 'continue' as const)})
+        const native = updater(order, 'native', {check: vi.fn(() => Promise.resolve(available)), apply: vi.fn(() => Promise.resolve('continue' as const))})
 
         await expect(createBundleUpdateGate({updaters: [native], isBusy: () => false}).onResume()).resolves.toBe(false)
     })

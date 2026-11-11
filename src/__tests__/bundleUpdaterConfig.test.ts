@@ -15,10 +15,11 @@ const environment = {
     BUNDLE_APP_VERSION: '0.7.0',
 }
 const versions = {package: '0.7.0', tauri: '0.7.0', cargo: '0.7.0'}
+const committedKey = environment.BUNDLE_UPDATER_PUBLIC_KEY
 
 describe('release updater config preparation', () => {
     it('builds the Tauri endpoint and frontend config from the same explicit release inputs', () => {
-        const result = prepareBundleUpdaterConfig(environment, versions)
+        const result = prepareBundleUpdaterConfig(environment, versions, committedKey)
         expect(result.tauriConfig.plugins.updater.endpoints[0]).toBe(
             'https://api.transportklok.nl/rest/v1/applications/c86b7a60-9ef2-4ba8-b4d1-42ef6346ecb7/bundles/latest?format=tauri&target={{target}}-{{arch}}&current_version={{current_version}}',
         )
@@ -28,17 +29,30 @@ describe('release updater config preparation', () => {
     })
 
     it('fails closed on missing release configuration, invalid origin, or mismatched source versions', () => {
-        expect(() => prepareBundleUpdaterConfig({}, versions)).toThrow(/incomplete/)
-        expect(() => prepareBundleUpdaterConfig({...environment, BUNDLE_UPDATER_API_BASE_URL: 'http://api.transportklok.nl'}, versions)).toThrow(/HTTPS/)
-        expect(() => prepareBundleUpdaterConfig(environment, {...versions, cargo: '0.6.0'})).toThrow(/same stable version/)
-        expect(() => prepareBundleUpdaterConfig({...environment, BUNDLE_UPDATER_PUBLIC_KEY: ''}, versions)).toThrow(/incomplete/)
-        expect(() => prepareBundleUpdaterConfig({...environment, BUNDLE_UPDATER_PUBLIC_KEY: 'placeholder-key'}, versions)).toThrow(/valid Tauri minisign/)
-        expect(() => prepareBundleUpdaterConfig({...environment, BUNDLE_UPDATER_PUBLIC_KEY: 'secret key data'}, versions)).toThrow(/secret key material/)
+        expect(() => prepareBundleUpdaterConfig({}, versions, committedKey)).toThrow(/incomplete/)
+        expect(() => prepareBundleUpdaterConfig({...environment, BUNDLE_UPDATER_API_BASE_URL: 'http://api.transportklok.nl'}, versions, committedKey)).toThrow(/HTTPS/)
+        expect(() => prepareBundleUpdaterConfig(environment, {...versions, cargo: '0.6.0'}, committedKey)).toThrow(/same stable version/)
+        expect(() => prepareBundleUpdaterConfig({...environment, BUNDLE_UPDATER_PUBLIC_KEY: ''}, versions, committedKey)).toThrow(/incomplete/)
+        expect(() => prepareBundleUpdaterConfig({...environment, BUNDLE_UPDATER_PUBLIC_KEY: 'placeholder-key'}, versions, committedKey)).toThrow(/valid Tauri minisign/)
+        expect(() => prepareBundleUpdaterConfig({...environment, BUNDLE_UPDATER_PUBLIC_KEY: 'secret key data'}, versions, committedKey)).toThrow(/secret key material/)
         expect(() => prepareBundleUpdaterConfig({...environment, BUNDLE_APP_VERSION: '4294967296.0.0'}, {
             package: '4294967296.0.0',
             tauri: '4294967296.0.0',
             cargo: '4294967296.0.0',
-        })).toThrow(/bounded components/)
+        }, committedKey)).toThrow(/bounded components/)
+    })
+
+    it('refuses a release whose updater key is not the one committed in tauri.conf.json', () => {
+        const otherKey = Buffer.from(`untrusted comment: other public key\n${Buffer.concat([Buffer.from([0x45, 0x64]), Buffer.alloc(40, 2)]).toString('base64')}`).toString('base64')
+        expect(() => prepareBundleUpdaterConfig(environment, versions, otherKey)).toThrow(/committed in tauri.conf.json/)
+        expect(() => prepareBundleUpdaterConfig(environment, versions, undefined)).toThrow(/committed in tauri.conf.json/)
+    })
+
+    it('commits a valid updater public key and the TransportKlok Developer ID in tauri.conf.json', async () => {
+        const config = JSON.parse(await readFile(new URL('../../src-tauri/tauri.conf.json', import.meta.url), 'utf8'))
+        const key = config.plugins.updater.pubkey
+        expect(config.bundle.macOS.signingIdentity).toBe('Developer ID Application: TransportKlok (9UHZ3723YU)')
+        expect(() => prepareBundleUpdaterConfig({...environment, BUNDLE_UPDATER_PUBLIC_KEY: key}, versions, key)).not.toThrow()
     })
 
     it('validates version components and forwards target and bundle matrix arguments', () => {

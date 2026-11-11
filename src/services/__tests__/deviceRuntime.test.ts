@@ -30,9 +30,9 @@ describe('device runtime version initialization', () => {
     it('uses the native installed version and compile-time operating system target', async () => {
         await initializeDeviceRuntime({
             isNative: true,
-            getNativeVersion: async () => '1.9.0',
-            getPlatform: async () => 'macos',
-            getArchitecture: async () => 'aarch64',
+            getNativeVersion: () => Promise.resolve('1.9.0'),
+            getPlatform: () => Promise.resolve('macos'),
+            getArchitecture: () => Promise.resolve('aarch64'),
             browserVersion: '0.7.0',
         })
         const payload = getCurrentDeviceRegistrationPayload()
@@ -46,8 +46,8 @@ describe('device runtime version initialization', () => {
         await initializeDeviceRuntime({
             isNative: false,
             getNativeVersion,
-            getPlatform: async () => 'linux',
-            getArchitecture: async () => 'x86_64',
+            getPlatform: () => Promise.resolve('linux'),
+            getArchitecture: () => Promise.resolve('x86_64'),
             browserVersion: '0.7.0',
         })
         expect(getCurrentDeviceRegistrationPayload().application_version).toBe('0.7.0')

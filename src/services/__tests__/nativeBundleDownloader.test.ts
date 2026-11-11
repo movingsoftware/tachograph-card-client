@@ -28,13 +28,14 @@ const update = (overrides: Partial<NativeUpdaterUpdate> = {}): NativeUpdaterUpda
     version: '1.10.0',
     currentVersion: '1.9.0',
     rawJson: {url: descriptor.artifact.download_url, signature: descriptor.artifact.signature},
-    download: vi.fn(async (onEvent?: (event: NativeUpdaterEvent) => void) => {
+    download: vi.fn((onEvent?: (event: NativeUpdaterEvent) => void) => {
         onEvent?.({event: 'Started', data: {contentLength: 3}})
         onEvent?.({event: 'Progress', data: {chunkLength: 3}})
         onEvent?.({event: 'Finished'})
+        return Promise.resolve()
     }),
-    install: vi.fn(async () => undefined),
-    close: vi.fn(async () => undefined),
+    install: vi.fn(() => Promise.resolve()),
+    close: vi.fn(() => Promise.resolve()),
     ...overrides,
 })
 
@@ -144,10 +145,11 @@ describe('native bundle downloader', () => {
     })
 
     it.each([
-        ['announced', {download: vi.fn(async (onEvent?: (event: NativeUpdaterEvent) => void) => onEvent?.({event: 'Started', data: {contentLength: 4}}))}],
-        ['received', {download: vi.fn(async (onEvent?: (event: NativeUpdaterEvent) => void) => {
+        ['announced', {download: vi.fn((onEvent?: (event: NativeUpdaterEvent) => void) => Promise.resolve(onEvent?.({event: 'Started', data: {contentLength: 4}})))}],
+        ['received', {download: vi.fn((onEvent?: (event: NativeUpdaterEvent) => void) => {
             onEvent?.({event: 'Started', data: {contentLength: 3}})
             onEvent?.({event: 'Progress', data: {chunkLength: 2}})
+            return Promise.resolve()
         })}],
     ] as const)('rejects wrong %s byte counts and closes before installation', async (_label, overrides) => {
         const checkedUpdate = update(overrides)

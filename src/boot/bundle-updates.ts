@@ -16,20 +16,32 @@ import {
 } from '../services/deviceRuntime'
 
 /** Channel this installation follows unless Platform overrides it. */
-const WEB_BUNDLE_CHANNEL = 'stable'
+const WEB_BUNDLE_CHANNEL = 'production'
 
 export let bundleUpdatesCanStartRouteFlow = true
 let gate: BundleUpdateGate | undefined
 
-/** Checks native then web bundles before the user gets in; anything but `continue` keeps the launch screen. */
-export const checkBundleUpdates = async (): Promise<BundleUpdateGateResult> => {
-    if (!gate) return 'continue'
+const withUpdateLoading = async <T>(operation: () => Promise<T>): Promise<T> => {
     Loading.show({message: 'Controleren op een applicatie-update…'})
     try {
-        return await gate.atLaunch()
+        return await operation()
     } finally {
         Loading.hide()
     }
+}
+
+/** Checks native then web bundles before the user gets in; anything but `continue` keeps the launch screen. */
+export const checkBundleUpdates = (): Promise<BundleUpdateGateResult> => {
+    const currentGate = gate
+    if (!currentGate) return Promise.resolve('continue')
+    return withUpdateLoading(() => currentGate.atLaunch())
+}
+
+/** Checks again when the server requires an update before showing the outdated flow. */
+export const checkBundleUpdateManually = (): Promise<boolean> => {
+    const currentGate = gate
+    if (!currentGate) return Promise.resolve(false)
+    return withUpdateLoading(() => currentGate.onResume())
 }
 
 const holdStartupUntilNativeRestart = (): Promise<void> => new Promise(() => undefined)
@@ -128,7 +140,7 @@ export const runBundleUpdateBoot = async (): Promise<void> => {
                 type: 'negative',
                 message: 'De update kon niet veilig worden geïnstalleerd.',
                 caption: 'De applicatie blijft geblokkeerd totdat een veilige herstart lukt.',
-                actions: [{label: 'Herstarten', color: 'white', handler: () => { void requestNativeRelaunch(native.relaunch) }}],
+                actions: [{label: 'Herstarten', color: 'white', handler: () => { void requestNativeRelaunch(() => native.relaunch()) }}],
                 timeout: 0,
             })
         },
@@ -141,11 +153,14 @@ export const runBundleUpdateBoot = async (): Promise<void> => {
             ...clientOptions,
             runtimeTarget: getDeviceRuntimeInfo().target,
             kind: 'updater',
-            downloader: native.download,
+            downloader: (descriptor) => native.download(descriptor),
         }),
         kind: 'updater',
-        installer: {install: native.install, apply: native.relaunch},
-        runtime: async () => getDeviceRuntimeInfo(),
+        installer: {
+            install: (handle) => native.install(handle),
+            apply: () => native.relaunch(),
+        },
+        runtime: () => Promise.resolve(getDeviceRuntimeInfo()),
     })
 
     const webClient = createApplicationBundleClient({
@@ -169,9 +184,9 @@ export const runBundleUpdateBoot = async (): Promise<void> => {
         kind: 'web',
         installer: {
             install: async (download) => { await invoke('install_web_bundle', download as Record<string, unknown>) },
-            apply: native.relaunch,
+            apply: () => native.relaunch(),
         },
-        runtime: async () => ({version: getCurrentWebBundleVersion(), target: 'web'}),
+        runtime: () => Promise.resolve({version: getCurrentWebBundleVersion(), target: 'web'}),
     })
 
     gate = createBundleUpdateGate({updaters: [nativeUpdater, webUpdater], isBusy: isCardActivityBusy})

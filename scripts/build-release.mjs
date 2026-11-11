@@ -13,11 +13,12 @@ const webOnly = process.argv[2] === '--web-only'
 const forwardedArguments = parseReleaseBuildArguments(process.argv.slice(webOnly ? 3 : 2))
 const version = process.env.BUNDLE_APP_VERSION
 if (!version) throw new Error('Set BUNDLE_APP_VERSION before building a release.')
+const committedConfig = JSON.parse(await readFile(join(root, 'src-tauri/tauri.conf.json'), 'utf8'))
 const prepared = prepareBundleUpdaterConfig(process.env, {
     package: version,
     tauri: version,
     cargo: version,
-})
+}, committedConfig.plugins?.updater?.pubkey)
 await synchronizeApplicationVersion(root, version)
 
 const packageJson = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'))
