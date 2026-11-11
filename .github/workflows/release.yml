@@ -22,7 +22,7 @@ jobs:
             args: '--target aarch64-apple-darwin'
           - platform: 'blacksmith-6vcpu-macos-latest' # Cross-compile the Intel artifact on ARM64.
             args: '--target x86_64-apple-darwin'
-          - platform: 'blacksmith-2vcpu-ubuntu-2204' # for Tauri v1 you could replace this with ubuntu-20.04.
+          - platform: "${{ vars.RUNNER_TK_2 || 'tk-2' }}" # Own build server.
             args: ''
           - platform: 'blacksmith-2vcpu-windows-2025'
             args: ''
@@ -75,10 +75,10 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           # Those targets are only used on macOS runners so it's in an `if` to slightly speed up Windows and Linux builds.
-          targets: ${{ matrix.platform == 'blacksmith-6vcpu-macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+          targets: ${{ runner.os == 'macOS' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
 
       - name: install dependencies (ubuntu only)
-        if: matrix.platform == 'blacksmith-2vcpu-ubuntu-2204' # This must match the platform value defined above.
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential libssl-dev pkg-config libpcsclite-dev libdbus-1-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf

@@ -38,7 +38,7 @@ jobs:
   release:
     name: Guard the tag and choose web or native
     if: ${{ github.event_name == 'push' }}
-    runs-on: blacksmith-2vcpu-ubuntu-2204
+    runs-on: ${{ vars.RUNNER_TK_2 || 'tk-2' }}
     timeout-minutes: 10
     outputs:
       version: ${{ steps.guard.outputs.version }}
@@ -82,7 +82,7 @@ jobs:
     name: Publish the web bundle at 10%
     needs: release
     if: ${{ needs.release.outputs.path == 'web' }}
-    runs-on: blacksmith-2vcpu-ubuntu-2204
+    runs-on: ${{ vars.RUNNER_TK_2 || 'tk-2' }}
     timeout-minutes: 30
     environment: tcc-production
     permissions:
@@ -236,7 +236,7 @@ jobs:
     name: Hand over the native release
     needs: release
     if: ${{ needs.release.outputs.path == 'native' }}
-    runs-on: blacksmith-2vcpu-ubuntu-2204
+    runs-on: ${{ vars.RUNNER_TK_2 || 'tk-2' }}
     timeout-minutes: 5
     env:
       VERSION: ${{ needs.release.outputs.version }}
@@ -275,7 +275,7 @@ jobs:
   channel:
     name: ${{ inputs.action }} the production channel
     if: ${{ github.event_name == 'workflow_dispatch' }}
-    runs-on: blacksmith-2vcpu-ubuntu-2204
+    runs-on: ${{ vars.RUNNER_TK_2 || 'tk-2' }}
     timeout-minutes: 15
     environment: tcc-production
     permissions:
