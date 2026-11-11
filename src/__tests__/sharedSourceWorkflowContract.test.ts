@@ -198,7 +198,7 @@ describe('TCC shared.js source workflow contract', () => {
         const web = requiredJob(publish.workflow, 'web')
         const native = requiredJob(publish.workflow, 'native')
         const webManifest = findStep(web, 'Write the manifest with the native range')
-        const nativeSummary = findStep(native, 'Raise the native baseline to this release').run ?? ''
+        const nativeSummary = findStep(native, 'Hand over the native build and raise the baseline for production').run ?? ''
 
         expect(publishRelease.outputs?.shared_source_sha)
             .toBe(expression('steps.shared.outputs.shared_source_sha'))

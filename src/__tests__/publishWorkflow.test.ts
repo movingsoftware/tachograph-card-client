@@ -39,7 +39,9 @@ function condition(expression: string, context: Context) {
     const body = /^\$\{\{\s*(.+?)\s*\}\}$/.exec(expression)
     if (!body) throw new Error(`Unsupported workflow condition: ${expression}`)
     return body[1].split(/\s*\|\|\s*/).some((clause) => {
-        if (clause === 'github.event.pull_request.head.repo.full_name == github.repository') return context.github.same_repository
+        if (clause === 'github.event.pull_request.head.repo.full_name == github.repository') {
+            return context.github.event_name === 'pull_request' && context.github.same_repository
+        }
         const comparison = /^(github\.event_name|needs\.release\.outputs\.path)\s*==\s*'([^']+)'$/.exec(clause)
         if (!comparison) throw new Error(`Unsupported workflow condition: ${expression}`)
         const actual = comparison[1] === 'github.event_name'
