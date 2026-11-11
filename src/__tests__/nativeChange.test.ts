@@ -34,6 +34,11 @@ function detect() {
     return spawnSync('node', [SCRIPT, '--repo', repo], {encoding: 'utf8'})
 }
 
+// Changes a Rust dependency in Cargo.lock, which needs a new native shell.
+function changeRustDependency() {
+    write('src-tauri/Cargo.lock', read('src-tauri/Cargo.lock').replace(/(\nname = "serde"\nversion = ")[^"]+"/, '$19.9.9"'))
+}
+
 // Adds or changes a resolved package in the lockfile, as npm install would.
 function lockPackage(name: string, version: string) {
     const lock = JSON.parse(read('package-lock.json'))
@@ -73,24 +78,27 @@ describe('native-change', () => {
         expect(result.stdout.trim()).toBe('web')
     })
 
-    it('says native when the Rust source changes', () => {
+    it('says native when the Rust source changes', async () => {
         write('src-tauri/src/lib.rs', 'pub fn run() { println!("x"); }\n')
+        await synchronizeApplicationVersion(repo, '0.9.0')
         commit()
 
         expect(detect().stdout.trim().split('\n')).toEqual(['native', 'src-tauri/src/lib.rs: changed'])
     })
 
-    it('says native when a Tauri package resolves differently', () => {
+    it('says native when a Tauri package resolves differently', async () => {
         lockPackage('@tauri-apps/plugin-updater', '2.9.1')
+        await synchronizeApplicationVersion(repo, '0.9.0')
         commit()
 
         expect(detect().stdout.trim().split('\n')).toEqual(['native', 'package-lock.json: @tauri-apps/plugin-updater 2.9.0 -> 2.9.1'])
     })
 
-    it('says native when a Tauri plugin is declared in package.json', () => {
+    it('says native when a Tauri plugin is declared in package.json', async () => {
         const manifest = JSON.parse(read('package.json'))
         manifest.dependencies['@tauri-apps/plugin-fs'] = '^2.0.0'
         write('package.json', JSON.stringify(manifest, null, 2))
+        await synchronizeApplicationVersion(repo, '0.9.0')
         commit()
 
         expect(detect().stdout.trim().split('\n')).toEqual(['native', 'package.json: @tauri-apps/plugin-fs absent -> ^2.0.0'])
@@ -100,15 +108,15 @@ describe('native-change', () => {
         const config = JSON.parse(read('src-tauri/tauri.conf.json'))
         config.app.security.csp = "default-src 'self'"
         write('src-tauri/tauri.conf.json', JSON.stringify(config, null, 2))
-        await synchronizeApplicationVersion(repo, '0.8.1')
+        await synchronizeApplicationVersion(repo, '0.9.0')
         commit()
 
         expect(detect().stdout.trim().split('\n')).toEqual(['native', 'src-tauri/tauri.conf.json: changed'])
     })
 
     it('says native when a Rust dependency in Cargo.lock changes, not only the app version', async () => {
-        await synchronizeApplicationVersion(repo, '0.8.1')
-        write('src-tauri/Cargo.lock', read('src-tauri/Cargo.lock').replace(/(\nname = "serde"\nversion = ")[^"]+"/, '$19.9.9"'))
+        await synchronizeApplicationVersion(repo, '0.9.0')
+        changeRustDependency()
         commit()
 
         expect(detect().stdout.trim().split('\n')).toEqual(['native', 'src-tauri/Cargo.lock: changed'])
@@ -129,6 +137,22 @@ describe('native-change', () => {
 
         expect(result.status).toBe(2)
         expect(result.stderr).toContain('Cannot decide web or native')
+    })
+})
+
+describe('native-change for a patch release', () => {
+    it('refuses a patch that changes the native shell and says to cut a minor', async () => {
+        await synchronizeApplicationVersion(repo, '0.8.1')
+        changeRustDependency()
+        commit()
+
+        const result = detect()
+
+        expect(result.status).toBe(3)
+        expect(result.stdout).toBe('')
+        expect(result.stderr).toContain('0.8.1 is a patch release, and a patch ships only as a web bundle; it may not build a native release.')
+        expect(result.stderr).toContain('src-tauri/Cargo.lock: changed')
+        expect(result.stderr).toContain('Cut the next minor 0.9.0 on release/0.9 for this change')
     })
 })
 
