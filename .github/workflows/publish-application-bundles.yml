@@ -3,7 +3,7 @@ name: Publish application bundles
 on:
   push:
     tags:
-      - '[0-9]+.[0-9]+.[0-9]+'
+      - '1.[0-9]+.[0-9]+'
   workflow_dispatch:
     inputs:
       action:
@@ -50,14 +50,17 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Check the tag is on main and equals package.json
+      - name: Check the tag is on its release line and equals package.json
         id: guard
         run: |
           set -euo pipefail
           tag="$GITHUB_REF_NAME"
           version="$(node -p 'require("./package.json").version')"
           test "$GITHUB_REF_TYPE" = tag
-          git merge-base --is-ancestor "$GITHUB_SHA" origin/main || { echo "Tag $tag is not on main." >&2; exit 1; }
+          [[ "$tag" =~ ^1\.([0-9]+)\.[0-9]+$ ]] || { echo "Tag '$tag' is not a 1.x.y release tag." >&2; exit 1; }
+          line="release/1.${BASH_REMATCH[1]}"
+          git merge-base --is-ancestor "$GITHUB_SHA" "origin/$line" \
+            || { echo "Tag $tag is not on $line; a production release is tagged on its own release line." >&2; exit 1; }
           test "$version" = "$tag" || { echo "Tag $tag does not equal package.json's version $version." >&2; exit 1; }
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
@@ -65,6 +68,7 @@ jobs:
         id: path
         run: |
           set -euo pipefail
+          # A patch that changes the native shell fails here: a native release only ships in an X.Y.0.
           result="$(node scripts/native-change.mjs)"
           echo "$result"
           path="$(head -n 1 <<<"$result")"
@@ -252,16 +256,18 @@ jobs:
           set -euo pipefail
           jq --arg tag "$VERSION" '.baseline_tag = $tag' native-baseline.json > native-baseline.next.json
           mv native-baseline.next.json native-baseline.json
+          line="release/$(cut -d. -f1-2 <<<"$VERSION")"
           {
             echo "### $VERSION is a native release"
             echo "No web bundle was published. Build and publish the native shell with Platform's \`publish-application-bundles.yml\`:"
             echo "- version: \`$VERSION\`"
             echo "- tcc_source_revision: \`$GITHUB_SHA\`"
             echo "- shared_source_revision: \`$SHARED_SOURCE_REVISION\`"
-            echo "Once it is published, open a PR into main with this native-baseline.json (the \`native-baseline\` artifact):"
+            echo "Once it is published, open a PR into $line (and merge it back to main) with this native-baseline.json (the \`native-baseline\` artifact):"
             echo '```json'
             cat native-baseline.json
             echo '```'
+            echo "From the workspace: \`REPOSITORIES=tachograph-card-client LINE=${line#release/} BASE=release make env feature BRANCH=feature/native-baseline-$VERSION\`, copy the artifact over tachograph-card-client/native-baseline.json, then \`make env commit\`, \`make env push\` and \`make env pr\`."
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Keep the raised baseline

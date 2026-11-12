@@ -3,7 +3,8 @@
 //
 //   node scripts/native-change.mjs [--repo DIR] [--head REF]
 //
-// Prints `web`, or `native` followed by one reason per line. Exits 2 when it cannot decide.
+// Prints `web`, or `native` followed by one reason per line. Exits 2 when it cannot decide, and 3 when package.json's
+// version is a patch (X.Y.Z, Z > 0) that needs a native shell: a native release only ever ships in an X.Y.0.
 
 import {execFileSync} from 'node:child_process'
 import {resolve} from 'node:path'
@@ -126,6 +127,17 @@ function baselineTag(repo, head) {
     return tag
 }
 
+// The refusal of a patch release that needs a native shell, which only a major or minor release may ship.
+function patchRefusal(version, base, reasons) {
+    const [major, minor] = version.split('.').map(Number)
+    return [
+        `${version} is a patch release, and a patch ships only as a web bundle; it may not build a native release.`,
+        `It changes the native shell since the native baseline ${base}:`,
+        ...reasons.map((reason) => `  ${reason}`),
+        `Cut the next minor ${major}.${minor + 1}.0 on release/${major}.${minor + 1} for this change, or take the native change out of ${version}.`,
+    ].join('\n')
+}
+
 try {
     const options = parseArgs(process.argv.slice(2))
     const base = baselineTag(options.repo, options.head)
@@ -134,6 +146,10 @@ try {
     const reasons = version === base
         ? [`native-baseline.json: ${base} is the native baseline release itself`]
         : nativeReasons(options.repo, `refs/tags/${base}`, options.head)
+    if (reasons.length > 0 && Number(version.split('.')[2]) > 0) {
+        console.error(patchRefusal(version, base, reasons))
+        process.exit(3)
+    }
     console.log(reasons.length === 0 ? 'web' : ['native', ...reasons].join('\n'))
 } catch (error) {
     console.error(`Cannot decide web or native: ${error.message}`)

@@ -42,10 +42,19 @@ function jobsThatRun(event: string, path: string) {
 }
 
 describe('publish-application-bundles.yml path choice', () => {
-    it('runs on a stable version tag and on manual widen and rollback', () => {
-        expect(workflow.on.push.tags).toEqual(['[0-9]+.[0-9]+.[0-9]+'])
+    it('runs on a 1.x.y release tag and on manual widen and rollback', () => {
+        expect(workflow.on.push.tags).toEqual(['1.[0-9]+.[0-9]+'])
         expect(workflow.on.workflow_dispatch.inputs.action.options).toEqual(['widen', 'rollback'])
         expect(workflow.on.workflow_dispatch.inputs.reason.required).toBe(true)
+    })
+
+    it('only releases a tag that sits on its own release/1.x line', () => {
+        const guard = script('release')
+
+        expect(guard).toContain('[[ "$tag" =~ ^1\\.([0-9]+)\\.[0-9]+$ ]]')
+        expect(guard).toContain('line="release/1.${BASH_REMATCH[1]}"')
+        expect(guard).toContain('git merge-base --is-ancestor "$GITHUB_SHA" "origin/$line"')
+        expect(guard).not.toContain('origin/main')
     })
 
     it('asks the native-change detector and passes its answer as the path', () => {
